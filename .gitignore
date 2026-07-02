@@ -1,0 +1,102 @@
+# Ignore build outputs
+bin/
+obj/
+Debug/
+Release/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.cache
+*.log
+*.vspscc
+*.vssscc
+*.dbmdl
+*.bak
+*.backup
+*.tmp
+*.userprefs
+TestResults/
+*.ncb
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.opendb
+
+# Rider
+.idea/
+*.sln.iml
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# NuGet
+packages/
+*.nupkg
+packages.lock.json
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+pip-wheel-metadata/
+.pytest_cache/
+.pyre/
+.pytype/
+.mypy_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.python-version
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Other
+*.db
+*.sqlite
+*.sqlite3
+*.pid
+*.log
+*.tmp
+*.cache
+
+
+private_docs
