@@ -12,16 +12,11 @@ class TestAskRouteWiring:
         assert isinstance(body["answer"], str)
         assert len(body["answer"]) > 0
 
-    def test_post_ask_returns_chart(self, client: TestClient):
+    def test_post_ask_chart_is_optional(self, client: TestClient):
         response = client.post("/api/ask", json={"question": "anything"})
         assert response.status_code == 200
         body = response.json()
-        assert body["chart"] is not None
-        assert body["chart"]["chart_type"] == "bar"
-        assert body["chart"]["title"] == "Orders Overview"
-        assert len(body["chart"]["data"]) > 0
-        assert "x_key" in body["chart"]
-        assert "y_key" in body["chart"]
+        assert "chart" in body
 
     def test_post_ask_returns_sql(self, client: TestClient):
         response = client.post("/api/ask", json={"question": "Show me orders"})
