@@ -4,7 +4,6 @@ from app.repositories.base import SchemaRepository
 
 
 async def get_schema(ctx: RunContext[SchemaRepository]) -> str:
-    """Get the database schema — all public tables and their columns with types."""
     tables = await ctx.deps.get_tables()
     parts = []
     for table in tables:

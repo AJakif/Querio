@@ -1,36 +1,94 @@
 import pytest
-from fastapi.testclient import TestClient
+
+from app.domain.models import Answer, ClarifyingQuestion
+from app.repositories.memory.schema_repository_memory import InMemorySchemaRepository
+from app.repositories.memory.query_repository_memory import InMemoryQueryRepository
+from app.agent.agent import FakeSqlGenerator, GeneratedSQL
 
 
-class TestAskRouteWiring:
-    def test_post_ask_returns_answer_shape(self, client: TestClient):
-        response = client.post("/api/ask", json={"question": "How many orders are there?"})
-        assert response.status_code == 200
-        body = response.json()
-        assert body["type"] == "answer"
-        assert "answer" in body
-        assert isinstance(body["answer"], str)
-        assert len(body["answer"]) > 0
+class FakeSqlGeneratorWithClarification(FakeSqlGenerator):
+    async def generate(self, question: str) -> GeneratedSQL:
+        return GeneratedSQL(
+            sql="", explanation="ambiguous",
+            requires_clarification=True,
+            clarification_question="Which table?",
+            clarification_options=["orders", "customers"],
+        )
 
-    def test_post_ask_chart_is_optional(self, client: TestClient):
-        response = client.post("/api/ask", json={"question": "anything"})
-        assert response.status_code == 200
-        body = response.json()
-        assert "chart" in body
 
-    def test_post_ask_returns_sql(self, client: TestClient):
-        response = client.post("/api/ask", json={"question": "Show me orders"})
-        assert response.status_code == 200
-        body = response.json()
-        assert body["sql"] is not None
-        assert "sql" in body["sql"]
-        assert "explanation" in body["sql"]
+class FakeSqlGeneratorInvalidSql(FakeSqlGenerator):
+    async def generate(self, question: str) -> GeneratedSQL:
+        return GeneratedSQL(
+            sql="DROP TABLE orders", explanation="malicious"
+        )
 
-    def test_post_ask_empty_question(self, client: TestClient):
-        response = client.post("/api/ask", json={"question": ""})
-        assert response.status_code == 200
 
-    def test_health_returns_ok(self, client: TestClient):
-        response = client.get("/health")
-        assert response.status_code == 200
-        assert response.json() == {"status": "ok"}
+class TestAskService:
+    @pytest.fixture
+    def schema_repo(self):
+        return InMemorySchemaRepository()
+
+    @pytest.fixture
+    def query_repo(self):
+        repo = InMemoryQueryRepository()
+        repo.set_return_rows([{"order_count": 10}])
+        return repo
+
+    @pytest.fixture
+    def sql_gen(self):
+        return FakeSqlGenerator()
+
+    @pytest.fixture
+    def service(self, sql_gen, schema_repo, query_repo):
+        from app.services.ask_service import AskService
+        return AskService(
+            sql_generator=sql_gen,
+            schema_repository=schema_repo,
+            query_repository=query_repo,
+        )
+
+    @pytest.mark.asyncio
+    async def test_answer_returns_answer_with_text(self, service):
+        result = await service.answer("How many orders?")
+        assert isinstance(result, Answer)
+        assert result.text is not None
+        assert len(result.text) > 0
+
+    @pytest.mark.asyncio
+    async def test_answer_includes_sql(self, service):
+        result = await service.answer("How many orders?")
+        assert isinstance(result, Answer)
+        assert result.sql is not None
+        assert "COUNT" in result.sql.sql
+
+    @pytest.mark.asyncio
+    async def test_answer_includes_query_result(self, service):
+        result = await service.answer("How many orders?")
+        assert isinstance(result, Answer)
+        assert "10" in result.text
+
+    @pytest.mark.asyncio
+    async def test_clarifying_question_returned_when_ambiguous(self, schema_repo, query_repo):
+        gen = FakeSqlGeneratorWithClarification()
+        from app.services.ask_service import AskService
+        service = AskService(
+            sql_generator=gen,
+            schema_repository=schema_repo,
+            query_repository=query_repo,
+        )
+        result = await service.answer("Show me customers")
+        assert isinstance(result, ClarifyingQuestion)
+        assert "Which table?" in result.question
+
+    @pytest.mark.asyncio
+    async def test_guardrail_blocks_invalid_sql(self, schema_repo, query_repo):
+        gen = FakeSqlGeneratorInvalidSql()
+        from app.services.ask_service import AskService
+        service = AskService(
+            sql_generator=gen,
+            schema_repository=schema_repo,
+            query_repository=query_repo,
+        )
+        result = await service.answer("Drop something")
+        assert isinstance(result, Answer)
+        assert "could not process" in result.text.lower()

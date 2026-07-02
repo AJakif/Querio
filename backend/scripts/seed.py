@@ -1,8 +1,7 @@
-"""Seed the database with a minimal set of tables and sample data for development/testing."""
+"""Seed the database with a minimal set of tables and sample data."""
 
-import psycopg2
-from psycopg2.extras import RealDictCursor
 import os
+import psycopg2
 
 DSN = os.environ.get("DATABASE_URL", "postgresql://querio:querio@localhost:5432/querio")
 
@@ -57,11 +56,10 @@ def main():
             cur.execute(SCHEMA_SQL)
             cur.execute(DATA_SQL)
         conn.commit()
-        print("Database seeded successfully.")
-        print("  Tables: customers (5 rows), orders (10 rows)")
+        print("Database seeded: customers (5 rows), orders (10 rows)")
     except Exception as e:
         conn.rollback()
-        print(f"Error seeding database: {e}")
+        print(f"Error: {e}")
         raise
     finally:
         conn.close()

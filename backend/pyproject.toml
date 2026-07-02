@@ -1,5 +1,5 @@
 [tool.pytest.ini_options]
 markers = [
-    "integration: marks tests that require a real Postgres database",
+    "asyncio",
 ]
 asyncio_mode = "auto"

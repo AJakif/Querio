@@ -35,7 +35,6 @@ class AskService:
             return Answer(text="The query returned no results.", sql=SqlQuery(sql=generated.sql, explanation=generated.explanation))
 
         answer_text = _format_answer(rows, generated)
-
         return Answer(text=answer_text, sql=SqlQuery(sql=generated.sql, explanation=generated.explanation))
 
 
