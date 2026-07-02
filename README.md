@@ -6,7 +6,7 @@ Querio is a natural-language data analyst chatbot. Ask a business question in pl
 
 This is a portfolio project built to demonstrate agentic AI engineering: guardrail-validated SQL generation, ambiguity handling, and a provider-agnostic model architecture that runs against Claude, OpenAI, or a fully local model — not just "I called an LLM API."
 
-**Status:** In development (POC scope) · See [`POC_SRD_NL_Data_Chatbot_v1.3.md`](./POC_SRD_NL_Data_Chatbot_v1.3.md) for the full requirements doc.
+**Status:** In development (POC scope) · See [`POC_SRD_NL_Data_Chatbot_v1.3.md`](./docs/POC_SRD_NL_Data_Chatbot_v1.3.md) for the full requirements doc.
 
 ---
 
@@ -53,6 +53,105 @@ Most "AI chatbot" portfolio demos do RAG over documents. Querio does something h
 ```
 
 The agent never talks to the database directly. Every generated query is checked against a validator (`SELECT`-only, row cap, timeout) and runs under a read-only DB role — there's no code path where a raw, unvalidated query string reaches Postgres.
+
+```
+querio/
+├── backend/
+│   ├── app/
+│   │   ├── main.py                            # FastAPI entrypoint
+│   │   │
+│   │   ├── api/
+│   │   │   └── routes/
+│   │   │       └── ask.py                     # POST /ask
+│   │   │
+│   │   ├── schemas/                           # API request/response DTOs
+│   │   │   └── ask.py
+│   │   │
+│   │   ├── domain/                            # framework-agnostic core models
+│   │   │   ├── models.py                      # Question, Answer, ClarifyingQuestion, ChartSpec, SqlQuery
+│   │   │   └── exceptions.py                  # GuardrailViolation, AmbiguousQuestion
+│   │   │
+│   │   ├── repositories/                      # ★ repository pattern ★
+│   │   │   ├── base.py                        # abstract interfaces (ABCs)
+│   │   │   ├── schema_repository.py           # SchemaRepository(ABC): get_tables(), get_columns()
+│   │   │   ├── query_repository.py            # QueryRepository(ABC): execute(sql) -> rows
+│   │   │   └── postgres/
+│   │   │       ├── schema_repository_pg.py    # concrete: reads information_schema
+│   │   │       └── query_repository_pg.py     # concrete: runs under read-only role
+│   │   │
+│   │   ├── providers/                         # LLM provider abstraction (same pattern)
+│   │   │   ├── base.py                        # ModelProvider(ABC)
+│   │   │   ├── claude_provider.py
+│   │   │   ├── openai_provider.py
+│   │   │   ├── ollama_provider.py
+│   │   │   └── factory.py                     # env-config → concrete provider
+│   │   │
+│   │   ├── agent/
+│   │   │   ├── agent.py                       # Pydantic AI agent definition
+│   │   │   ├── prompts.py
+│   │   │   └── tools.py                       # exposes schema_repository as a tool
+│   │   │
+│   │   ├── guardrails/
+│   │   │   └── sql_validator.py                # pure function(s), no DB dependency
+│   │   │
+│   │   ├── services/                          # orchestration layer
+│   │   │   └── ask_service.py                  # agent + validator + repositories, glued together
+│   │   │
+│   │   └── core/
+│   │       ├── config.py                       # settings/env
+│   │       ├── db.py                           # connection/session factory
+│   │       └── logging.py
+│   │
+│   ├── tests/
+│   │   ├── unit/
+│   │   │   ├── test_sql_validator.py
+│   │   │   ├── test_providers.py
+│   │   │   └── test_ask_service.py             # uses FAKE repositories, no real DB needed
+│   │   ├── integration/
+│   │   │   └── test_ask_endpoint.py            # real Postgres, real repositories
+│   │   ├── fakes/
+│   │   │   ├── fake_schema_repository.py
+│   │   │   └── fake_query_repository.py
+│   │   └── conftest.py
+│   │
+│   ├── scripts/
+│   │   └── seed.py                             # loads Olist CSVs into raw schema
+│   ├── requirements.txt
+│   ├── Dockerfile
+│   └── .dockerignore
+│
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── ChatThread.tsx
+│   │   │   ├── ChatBubble.tsx
+│   │   │   └── charts/
+│   │   │       ├── BarChart.tsx
+│   │   │       ├── LineChart.tsx
+│   │   │       └── Histogram.tsx
+│   │   ├── api/askApi.ts
+│   │   ├── types/chartSpec.ts
+│   │   └── App.tsx
+│   ├── package.json
+│   ├── Dockerfile
+│   ├── nginx.conf                              # used by Dockerfile's runtime stage
+│   └── .dockerignore
+│
+├── dbt/
+│   ├── models/
+│   │   ├── staging/
+│   │   └── marts/
+│   └── dbt_project.yml
+│
+├── docker-compose.yml                          # not yet written
+├── .env.example
+├── README.md
+└── docs/
+    ├── POC_SRD_NL_Data_Chatbot_v1.3.md
+    ├── Querio_Epics_Backlog_v1.md
+    └── Querio_User_Journey_Stories_v1.md
+
+```
 
 ---
 
