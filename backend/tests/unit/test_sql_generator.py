@@ -1,6 +1,7 @@
 import pytest
 
 from app.agent.agent import GeneratedSQL, SqlGenerator, FakeSqlGenerator
+from app.repositories.base import SchemaRepository, RelationshipInfo
 
 
 class TestGeneratedSQL:
@@ -36,3 +37,16 @@ class TestFakeSqlGenerator:
         assert isinstance(result, GeneratedSQL)
         assert "COUNT" in result.sql.upper() or "SELECT" in result.sql.upper()
         assert result.requires_clarification is False
+
+
+class TestFormatSchema:
+    @pytest.mark.asyncio
+    async def test_format_schema_includes_relationships(self):
+        from app.agent.tools import format_schema
+        from app.repositories.memory.schema_repository_memory import InMemorySchemaRepository
+        repo = InMemorySchemaRepository()
+        output = await format_schema(repo)
+        assert "orders" in output
+        assert "customers" in output
+        assert "customer_id" in output
+        assert "->" in output

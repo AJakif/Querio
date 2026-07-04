@@ -50,3 +50,20 @@ class TestValidateSql:
         sql, error = validate_sql("EXEC sp_help")
         assert error is not None
         assert sql is None
+
+    def test_non_select_error_is_friendly(self):
+        _, error = validate_sql("DROP TABLE orders")
+        assert error is not None
+        assert "SELECT" not in error.upper()
+        assert "SQL" not in error.upper()
+        assert "keyword" not in error.lower()
+        assert "query" not in error.lower()
+        assert len(error) > 10
+
+    def test_forbidden_keyword_error_is_friendly(self):
+        _, error = validate_sql("SELECT * FROM orders; DROP TABLE customers")
+        assert error is not None
+        assert "forbidden" not in error.lower()
+        assert "keyword" not in error.lower()
+        assert "SQL" not in error.upper()
+        assert len(error) > 10

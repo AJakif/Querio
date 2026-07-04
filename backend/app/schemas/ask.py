@@ -1,9 +1,14 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Any
+
+
+import uuid as _uuid
 
 
 class AskRequest(BaseModel):
     question: str
+    conversation_id: str | None = None
+    clarification_answer: str | None = None
 
 
 class ChartSpecResponse(BaseModel):
@@ -24,9 +29,11 @@ class AnswerResponse(BaseModel):
     answer: str
     chart: ChartSpecResponse | None = None
     sql: SqlQueryResponse | None = None
+    conversation_id: str | None = None
 
 
 class ClarifyingQuestionResponse(BaseModel):
     type: str = "clarifying_question"
     question: str
     options: list[str] = []
+    conversation_id: str = Field(default_factory=lambda: str(_uuid.uuid4()))

@@ -1,4 +1,4 @@
-from app.repositories.base import SchemaRepository, ColumnInfo
+from app.repositories.base import SchemaRepository, ColumnInfo, RelationshipInfo
 
 
 class InMemorySchemaRepository(SchemaRepository):
@@ -22,3 +22,11 @@ class InMemorySchemaRepository(SchemaRepository):
 
     async def get_columns(self, table: str) -> list[ColumnInfo]:
         return self._tables.get(table, [])
+
+    async def get_relationships(self) -> list[RelationshipInfo]:
+        return [
+            RelationshipInfo(
+                source_table="orders", source_column="customer_id",
+                target_table="customers", target_column="customer_id",
+            ),
+        ]

@@ -17,12 +17,17 @@ async def ask(
     body: AskRequest,
     service: AskService = Depends(get_ask_service),
 ) -> AnswerResponse | ClarifyingQuestionResponse:
-    result = await service.answer(body.question)
+    result = await service.answer(
+        question=body.question,
+        conversation_id=body.conversation_id,
+        clarification_answer=body.clarification_answer,
+    )
 
     if isinstance(result, ClarifyingQuestion):
         return ClarifyingQuestionResponse(
             question=result.question,
             options=result.options,
+            conversation_id=result.conversation_id or "",
         )
 
     chart_response: ChartSpecResponse | None = None
@@ -46,4 +51,5 @@ async def ask(
         answer=result.text,
         chart=chart_response,
         sql=sql_response,
+        conversation_id=result.conversation_id,
     )

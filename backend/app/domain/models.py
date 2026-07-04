@@ -34,9 +34,11 @@ class Answer:
     text: str
     chart: ChartSpec | None = None
     sql: SqlQuery | None = None
+    conversation_id: str | None = None
 
 
 @dataclass
 class ClarifyingQuestion:
     question: str
     options: list[str] = field(default_factory=list)
+    conversation_id: str | None = None

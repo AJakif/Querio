@@ -9,6 +9,14 @@ class ColumnInfo:
     is_nullable: bool
 
 
+@dataclass
+class RelationshipInfo:
+    source_table: str
+    source_column: str
+    target_table: str
+    target_column: str
+
+
 class SchemaRepository(ABC):
     @abstractmethod
     async def get_tables(self) -> list[str]:
@@ -16,6 +24,10 @@ class SchemaRepository(ABC):
 
     @abstractmethod
     async def get_columns(self, table: str) -> list[ColumnInfo]:
+        ...
+
+    @abstractmethod
+    async def get_relationships(self) -> list[RelationshipInfo]:
         ...
 
 
