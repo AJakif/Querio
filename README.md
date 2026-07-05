@@ -205,13 +205,57 @@ If you're running against Ollama, make sure the model is pulled first: `ollama p
 
 ## Seeding the data
 
-```bash
-# one-off: load raw Olist CSVs into Postgres
-python scripts/seed.py
+The seed script creates the full Olist Brazilian E-Commerce dataset schema (9 tables with foreign key relationships) and populates it with deterministic, reproducible sample data (~9,500 rows). The data is arithmetically coherent: payment values match item totals, dates are internally consistent, and foreign keys resolve correctly across all entities.
 
-# transform into the queryable models
-dbt run
+```bash
+# one-off: create the schema and seed with deterministic Olist data
+python scripts/seed.py
 ```
+
+The script uses a fixed random seed (`SEED = 42`), so every run produces identical results. This guarantees reproducible data for development, testing, and demo purposes.
+
+### Schema overview
+
+| Table | Rows | Description |
+|---|---|---|
+| `customers` | 1,000 | Brazilian e-commerce customers with state/city |
+| `orders` | 5,000 | Orders with status, timestamps, FKs to customers |
+| `order_items` | ~5,500 | Line items per order, FKs to products & sellers |
+| `order_payments` | 5,000 | Payment method/installments per order |
+| `order_reviews` | ~4,775 | Review scores and comments for delivered orders |
+| `products` | 60 | Products across 30 categories with physical specs |
+| `sellers` | 50 | Sellers across Brazilian states |
+| `geolocation` | ~200 | Zip-code-level lat/lng data |
+| `product_categories` | 30 | Portuguese-to-English category name translation |
+
+### Foreign key relationships
+
+```
+orders.customer_id      -> customers.customer_id
+order_items.order_id    -> orders.order_id
+order_items.product_id  -> products.product_id
+order_items.seller_id   -> sellers.seller_id
+order_payments.order_id -> orders.order_id
+order_reviews.order_id  -> orders.order_id
+```
+
+### Arithmetic coherence
+
+The generated data is internally consistent:
+- `order_payments.payment_value` equals the sum of `order_items.price + freight_value` for each order
+- Order timestamps follow a strict sequence: purchase → approval → carrier → delivery
+- Only `delivered` orders have populated delivery dates
+- Review scores have a realistic distribution (skewed positive, ~70% at 4+)
+
+### Re-seeding
+
+To reset the database and re-seed (e.g., after schema changes or to get a fresh copy):
+
+```bash
+python scripts/seed.py
+```
+
+The script drops all existing tables and recreates them from scratch. Since the seed is deterministic, the same data is produced every time.
 
 This is a manual, one-time step for the POC — not a scheduled pipeline (see [Known limitations](#known-limitations) and the optional extension below).
 

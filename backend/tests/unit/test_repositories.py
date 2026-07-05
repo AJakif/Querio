@@ -72,3 +72,57 @@ class TestSchemaRepositoryRelationships:
             hasattr(r, "source_table") and hasattr(r, "target_table")
             for r in rels
         )
+
+    def test_all_olist_relationships_present(self):
+        from app.repositories.memory.schema_repository_memory import InMemorySchemaRepository
+        repo = InMemorySchemaRepository()
+        import asyncio
+        rels = asyncio.run(repo.get_relationships())
+        rel_set = {(r.source_table, r.source_column, r.target_table, r.target_column) for r in rels}
+        expected = {
+            ("orders", "customer_id", "customers", "customer_id"),
+            ("order_items", "order_id", "orders", "order_id"),
+            ("order_items", "product_id", "products", "product_id"),
+            ("order_items", "seller_id", "sellers", "seller_id"),
+            ("order_payments", "order_id", "orders", "order_id"),
+            ("order_reviews", "order_id", "orders", "order_id"),
+        }
+        assert rel_set == expected, f"Missing relationships: {expected - rel_set}"
+
+    def test_cross_entity_join_path_resolves(self):
+        from app.repositories.memory.schema_repository_memory import InMemorySchemaRepository
+        repo = InMemorySchemaRepository()
+        import asyncio
+        tables = asyncio.run(repo.get_tables())
+        assert "orders" in tables
+        assert "customers" in tables
+        assert "products" in tables
+        assert "sellers" in tables
+        assert "order_items" in tables
+        assert "order_payments" in tables
+
+        rels = asyncio.run(repo.get_relationships())
+        source_tables = {r.source_table for r in rels}
+        assert "order_items" in source_tables
+        assert "order_payments" in source_tables
+        assert "orders" in source_tables
+
+        customer_fk = [r for r in rels if r.source_table == "orders" and r.target_table == "customers"]
+        assert len(customer_fk) == 1
+        assert customer_fk[0].source_column == "customer_id"
+
+    def test_all_tables_have_defined_columns(self):
+        from app.repositories.memory.schema_repository_memory import InMemorySchemaRepository
+        repo = InMemorySchemaRepository()
+        import asyncio
+        tables = asyncio.run(repo.get_tables())
+        assert len(tables) == 9
+        expected_tables = {
+            "customers", "geolocation", "products", "sellers",
+            "orders", "order_items", "order_payments", "order_reviews",
+            "product_categories",
+        }
+        assert set(tables) == expected_tables
+        for t in tables:
+            cols = asyncio.run(repo.get_columns(t))
+            assert len(cols) > 0, f"Table {t} has no columns"
