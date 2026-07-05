@@ -34,22 +34,34 @@ Most "AI chatbot" portfolio demos do RAG over documents. Querio does something h
 │  Frontend   │◀─────│   Backend     │◀─────│  (Pydantic AI)       │
 │ (chat + chart)      │  (REST API)  │      └─────────┬───────────┘
 └─────────────┘      └──────────────┘                │
-                                            ┌───────────▼───────────┐
-                                            │  Model Provider        │
-                                            │  Abstraction Layer     │
-                                            │  (Claude / OpenAI /    │
-                                            │   Ollama, env-config)  │
-                                            └───────────┬───────────┘
-                                                        │
-                                            ┌───────────▼───────────┐
-                                            │  SQL Generation +      │
-                                            │  Guardrail Validator   │
-                                            └───────────┬───────────┘
-                                                        │
-                                            ┌───────────▼───────────┐
-                                            │  Postgres (read-only   │
-                                            │  role) + dbt models    │
-                                            └────────────────────────┘
+                                             ┌───────────▼───────────┐
+                                             │  Model Provider        │
+                                             │  Abstraction Layer     │
+                                             │  (Claude / OpenAI /    │
+                                             │   Ollama, env-config)  │
+                                             └───────────┬───────────┘
+                                                         │
+                                             ┌───────────▼───────────┐
+                                             │  SQL Generation +      │
+                                             │  Guardrail Validator   │
+                                             └───────────┬───────────┘
+                                                         │
+                                             ┌───────────▼───────────┐
+                                             │  Postgres — marts      │
+                                             │  schema (fct_orders,   │
+                                             │  dim_customers)        │
+                                             └───────────┬───────────┘
+                                                         │
+                                             ┌───────────▼───────────┐
+                                             │  dbt transforms        │
+                                             │  raw → marts           │
+                                             └───────────┬───────────┘
+                                                         │
+                                             ┌───────────▼───────────┐
+                                             │  raw schema            │
+                                             │  (9 Olist tables,      │
+                                             │   loaded by seed)      │
+                                             └────────────────────────┘
 ```
 
 The agent never talks to the database directly. Every generated query is checked against a validator (`SELECT`-only, row cap, timeout) and runs under a read-only DB role — there's no code path where a raw, unvalidated query string reaches Postgres.
@@ -73,18 +85,15 @@ querio/
 │   │   │
 │   │   ├── repositories/                      # ★ repository pattern ★
 │   │   │   ├── base.py                        # abstract interfaces (ABCs)
-│   │   │   ├── schema_repository.py           # SchemaRepository(ABC): get_tables(), get_columns()
-│   │   │   ├── query_repository.py            # QueryRepository(ABC): execute(sql) -> rows
+│   │   │   ├── memory/
+│   │   │   │   ├── schema_repository_memory.py
+│   │   │   │   └── query_repository_memory.py
 │   │   │   └── postgres/
-│   │   │       ├── schema_repository_pg.py    # concrete: reads information_schema
-│   │   │       └── query_repository_pg.py     # concrete: runs under read-only role
+│   │   │       ├── schema_repository_pg.py    # reads information_schema (configurable schema)
+│   │   │       └── query_repository_pg.py     # read-only execution
 │   │   │
-│   │   ├── providers/                         # LLM provider abstraction (same pattern)
-│   │   │   ├── base.py                        # ModelProvider(ABC)
-│   │   │   ├── claude_provider.py
-│   │   │   ├── openai_provider.py
-│   │   │   ├── ollama_provider.py
-│   │   │   └── factory.py                     # env-config → concrete provider
+│   │   ├── providers/                         # LLM provider abstraction (stub)
+│   │   │   └── __init__.py
 │   │   │
 │   │   ├── agent/
 │   │   │   ├── agent.py                       # Pydantic AI agent definition
@@ -110,12 +119,13 @@ querio/
 │   │   ├── integration/
 │   │   │   └── test_ask_endpoint.py            # real Postgres, real repositories
 │   │   ├── fakes/
-│   │   │   ├── fake_schema_repository.py
-│   │   │   └── fake_query_repository.py
+│   │   │   └── ... (only .pyc remnants)
 │   │   └── conftest.py
 │   │
 │   ├── scripts/
-│   │   └── seed.py                             # loads Olist CSVs into raw schema
+│   │   ├── load_raw.py                        # generates Olist data into raw schema
+│   │   ├── download_olist.py                  # downloads real Olist CSVs from Kaggle
+│   │   └── seed.py                            # (legacy) seeds public schema directly
 │   ├── requirements.txt
 │   ├── Dockerfile
 │   └── .dockerignore
@@ -126,11 +136,9 @@ querio/
 │   │   │   ├── ChatThread.tsx
 │   │   │   ├── ChatBubble.tsx
 │   │   │   └── charts/
-│   │   │       ├── BarChart.tsx
-│   │   │       ├── LineChart.tsx
-│   │   │       └── Histogram.tsx
+│   │   │       └── ChartWidget.tsx
 │   │   ├── api/askApi.ts
-│   │   ├── types/chartSpec.ts
+│   │   ├── types/api.ts
 │   │   └── App.tsx
 │   ├── package.json
 │   ├── Dockerfile
@@ -138,12 +146,16 @@ querio/
 │   └── .dockerignore
 │
 ├── dbt/
-│   ├── models/
-│   │   ├── staging/
-│   │   └── marts/
-│   └── dbt_project.yml
+│   ├── dbt_project.yml                        # dbt project config → marts schema
+│   ├── profiles.yml                            # Postgres connection profile
+│   └── models/
+│       ├── sources.yml                         # raw schema source definitions
+│       └── marts/
+│           ├── schema.yml                      # model docs + column-level tests
+│           ├── fct_orders.sql                   # order-level fact table
+│           └── dim_customers.sql                # customer dimension
 │
-├── docker-compose.yml                          # not yet written
+├── docker-compose.yml                          # full stack: postgres + seed + dbt + api + frontend
 ├── .env.example
 ├── README.md
 └── docs/
@@ -163,7 +175,7 @@ querio/
 | Backend API | FastAPI |
 | Agent framework | Pydantic AI |
 | Database | PostgreSQL |
-| Transformation | dbt (2 models) |
+| Transformation | dbt (2 models: `fct_orders`, `dim_customers`) |
 | LLM providers | Anthropic Claude, OpenAI, local via Ollama — switchable via env config |
 | Testing | pytest, TDD |
 | Deployment | Docker Compose |
@@ -173,6 +185,8 @@ querio/
 ## Dataset
 
 [Olist Brazilian E-Commerce dataset](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce) — ~100k orders across orders, order items, products, customers, sellers, payments, and reviews. Chosen because it has real relational structure (the agent has to reason across joins, not just filter one flat table) and sits comfortably in the 100k–1M row performance target.
+
+The project works with deterministic synthetic data that mirrors the Olist schema exactly. The download script (`scripts/download_olist.py`) is available if you want the real CSVs.
 
 ---
 
@@ -186,6 +200,20 @@ docker compose up
 ```
 
 Then open `http://localhost:3000` (or whatever port the frontend maps to) and start asking questions.
+
+### Data pipeline
+
+`docker compose up` runs the full pipeline automatically:
+
+1. **Postgres** starts and waits for health.
+2. **Seed** (`python scripts/load_raw.py`) creates the `raw` schema and populates 9 tables with deterministic Olist-like data.
+3. **dbt** runs `dbt run`, which transforms `raw` → `marts` schema producing two analytical models:
+   - `fct_orders` — order-level fact table (orders + items + payments)
+   - `dim_customers` — customer dimension with aggregated order metrics
+4. **Backend** starts, configured to read schema from the `marts` schema (`DB_SCHEMA=marts`).
+5. **Frontend** starts, serving the chat UI.
+
+The agent queries the clean `marts` schema tables — not the raw normalized tables — so joins are simpler and query generation is more reliable.
 
 ### Configuring the model provider
 
@@ -203,61 +231,47 @@ If you're running against Ollama, make sure the model is pulled first: `ollama p
 
 ---
 
-## Seeding the data
+## Data pipeline
 
-The seed script creates the full Olist Brazilian E-Commerce dataset schema (9 tables with foreign key relationships) and populates it with deterministic, reproducible sample data (~9,500 rows). The data is arithmetically coherent: payment values match item totals, dates are internally consistent, and foreign keys resolve correctly across all entities.
+The project uses a two-layer data architecture:
 
-```bash
-# one-off: create the schema and seed with deterministic Olist data
-python scripts/seed.py
+```
+raw (seed script)  ──▶  dbt run  ──▶  marts (agent queries this layer)
 ```
 
-The script uses a fixed random seed (`SEED = 42`), so every run produces identical results. This guarantees reproducible data for development, testing, and demo purposes.
+- **`raw` schema** (9 tables): mirrors the original Olist CSV structure. Populated by `python scripts/load_raw.py` with deterministic, arithmetically coherent sample data (~9,500 rows).
+- **`marts` schema** (2 models): analytical tables produced by dbt. The agent introspects this schema to generate queries.
 
-### Schema overview
+### Raw schema tables
 
 | Table | Rows | Description |
 |---|---|---|
-| `customers` | 1,000 | Brazilian e-commerce customers with state/city |
-| `orders` | 5,000 | Orders with status, timestamps, FKs to customers |
-| `order_items` | ~5,500 | Line items per order, FKs to products & sellers |
-| `order_payments` | 5,000 | Payment method/installments per order |
-| `order_reviews` | ~4,775 | Review scores and comments for delivered orders |
-| `products` | 60 | Products across 30 categories with physical specs |
-| `sellers` | 50 | Sellers across Brazilian states |
-| `geolocation` | ~200 | Zip-code-level lat/lng data |
-| `product_categories` | 30 | Portuguese-to-English category name translation |
+| `raw.customers` | 1,000 | Brazilian e-commerce customers with state/city |
+| `raw.orders` | 5,000 | Orders with status, timestamps |
+| `raw.order_items` | ~5,500 | Line items per order |
+| `raw.order_payments` | 5,000 | Payment method/installments |
+| `raw.order_reviews` | ~4,775 | Review scores and comments |
+| `raw.products` | 60 | Products across 30 categories |
+| `raw.sellers` | 50 | Sellers across Brazilian states |
+| `raw.geolocation` | ~200 | Zip-code-level lat/lng data |
+| `raw.product_category_name_translation` | 30 | Portuguese-to-English category name translation |
 
-### Foreign key relationships
+### Marts models (dbt output)
 
-```
-orders.customer_id      -> customers.customer_id
-order_items.order_id    -> orders.order_id
-order_items.product_id  -> products.product_id
-order_items.seller_id   -> sellers.seller_id
-order_payments.order_id -> orders.order_id
-order_reviews.order_id  -> orders.order_id
-```
+| Model | Type | Description |
+|---|---|---|
+| `marts.fct_orders` | Fact table | Order-level: joins orders + items + payments. One row per order with aggregated item/payment metrics. |
+| `marts.dim_customers` | Dimension | Customer details with lifetime order aggregates (total orders, total spent, avg order value, first/last order date). |
 
-### Arithmetic coherence
-
-The generated data is internally consistent:
-- `order_payments.payment_value` equals the sum of `order_items.price + freight_value` for each order
-- Order timestamps follow a strict sequence: purchase → approval → carrier → delivery
-- Only `delivered` orders have populated delivery dates
-- Review scores have a realistic distribution (skewed positive, ~70% at 4+)
-
-### Re-seeding
-
-To reset the database and re-seed (e.g., after schema changes or to get a fresh copy):
+### Re-seeding and rebuilding
 
 ```bash
-python scripts/seed.py
+# Full reset: reload raw data and rebuild dbt models
+python scripts/load_raw.py
+cd dbt && dbt run
 ```
 
-The script drops all existing tables and recreates them from scratch. Since the seed is deterministic, the same data is produced every time.
-
-This is a manual, one-time step for the POC — not a scheduled pipeline (see [Known limitations](#known-limitations) and the optional extension below).
+The seed script uses a fixed random seed (`SEED = 42`), so every run produces identical results. This guarantees reproducible data for development, testing, and demo purposes.
 
 ---
 

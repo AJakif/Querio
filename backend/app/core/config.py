@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
     max_rows: int = 1000
+    db_schema: str = "marts"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

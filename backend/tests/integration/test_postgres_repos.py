@@ -10,7 +10,7 @@ from app.repositories.postgres.query_repository_pg import PostgresQueryRepositor
 
 # Instantiate at module level to verify all ABC methods are implemented
 # This will raise TypeError if get_relationships() is missing.
-_ = PostgresSchemaRepository()  # noqa: F811
+_ = PostgresSchemaRepository(schema="public")  # noqa: F811
 _ = PostgresQueryRepository()  # noqa: F811
 
 
@@ -34,13 +34,13 @@ requires_db = pytest.mark.skipif(not _db_available(), reason="DATABASE_URL not s
 class TestPostgresSchemaRepository:
     def test_implements_schema_repository_interface(self):
         from app.repositories.postgres.schema_repository_pg import PostgresSchemaRepository
-        repo = PostgresSchemaRepository()
+        repo = PostgresSchemaRepository(schema="public")
         assert isinstance(repo, SchemaRepository)
 
     @pytest.mark.asyncio
     async def test_get_tables_returns_public_tables(self):
         from app.repositories.postgres.schema_repository_pg import PostgresSchemaRepository
-        repo = PostgresSchemaRepository()
+        repo = PostgresSchemaRepository(schema="public")
         tables = await repo.get_tables()
         assert len(tables) > 0
         assert all(isinstance(t, str) for t in tables)
@@ -48,7 +48,7 @@ class TestPostgresSchemaRepository:
     @pytest.mark.asyncio
     async def test_get_columns_returns_column_info(self):
         from app.repositories.postgres.schema_repository_pg import PostgresSchemaRepository
-        repo = PostgresSchemaRepository()
+        repo = PostgresSchemaRepository(schema="public")
         tables = await repo.get_tables()
         assert len(tables) > 0
         cols = await repo.get_columns(tables[0])
@@ -61,7 +61,7 @@ class TestPostgresSchemaRepositoryRelationships:
     @pytest.mark.asyncio
     async def test_get_relationships_returns_foreign_keys(self):
         from app.repositories.postgres.schema_repository_pg import PostgresSchemaRepository
-        repo = PostgresSchemaRepository()
+        repo = PostgresSchemaRepository(schema="public")
         rels = await repo.get_relationships()
         assert len(rels) > 0
         has_customer_fk = any(

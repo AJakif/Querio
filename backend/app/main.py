@@ -28,7 +28,8 @@ def _has_env(key: str) -> bool:
 
 def _build_repos() -> tuple[SchemaRepository, QueryRepository]:
     if _has_env("DATABASE_URL"):
-        return PostgresSchemaRepository(), PostgresQueryRepository()
+        from app.core.config import settings
+        return PostgresSchemaRepository(schema=settings.db_schema), PostgresQueryRepository()
     return InMemorySchemaRepository(), InMemoryQueryRepository()
 
 

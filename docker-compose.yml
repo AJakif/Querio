@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: querio
+      POSTGRES_PASSWORD: querio
+      POSTGRES_DB: querio
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U querio -d querio"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  seed:
+    build:
+      context: backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://querio:querio@postgres:5432/querio
+    command: python scripts/load_raw.py
+
+  dbt:
+    build:
+      context: backend
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    environment:
+      DBT_HOST: postgres
+      DBT_PORT: "5432"
+      DBT_USER: querio
+      DBT_PASSWORD: querio
+      DBT_DBNAME: querio
+    working_dir: /dbt
+    volumes:
+      - ./dbt:/dbt
+    command: >
+      sh -c "
+        pip install dbt-postgres -q &&
+        dbt deps &&
+        dbt run
+      "
+
+  backend:
+    build:
+      context: backend
+    depends_on:
+      dbt:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://querio:querio@postgres:5432/querio
+      DB_SCHEMA: marts
+      MODEL_NAME: ${MODEL_NAME:-openai:gpt-4o-mini}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: frontend
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  pgdata:

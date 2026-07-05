@@ -1,0 +1,59 @@
+version: 2
+
+models:
+  - name: fct_orders
+    description: >
+      Order-level fact table joining orders, order_items, and payments.
+      One row per order with aggregated item and payment metrics.
+    columns:
+      - name: order_id
+        description: Primary key
+        tests:
+          - unique
+          - not_null
+      - name: customer_id
+        description: Foreign key to dim_customers
+        tests:
+          - not_null
+      - name: order_status
+        description: Current delivery status
+      - name: total_items
+        description: Number of distinct line items in the order
+      - name: total_item_value
+        description: Sum of (price + freight) across all items
+      - name: total_payment_value
+        description: Total payment value (matches total_item_value)
+      - name: payment_type
+        description: Primary payment method
+      - name: payment_installments
+        description: Number of installments
+      - name: order_purchase_timestamp
+        description: When the order was placed
+      - name: order_delivered_customer_date
+        description: When the customer received the order
+
+  - name: dim_customers
+    description: >
+      Customer dimension with geographic info and aggregate order metrics.
+    columns:
+      - name: customer_id
+        description: Primary key
+        tests:
+          - unique
+          - not_null
+      - name: customer_unique_id
+        description: Anonymous customer identifier
+      - name: customer_city
+        description: Customer city
+      - name: customer_state
+        description: Customer state (2-letter code)
+      - name: total_orders
+        description: Lifetime order count for this customer
+      - name: total_spent
+        description: Lifetime total spend
+      - name: avg_order_value
+        description: Average spend per order
+      - name: first_order_date
+        description: Date of first order
+      - name: last_order_date
+        description: Date of most recent order

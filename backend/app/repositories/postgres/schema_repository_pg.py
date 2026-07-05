@@ -1,11 +1,13 @@
 import asyncio
 
 from app.repositories.base import SchemaRepository, ColumnInfo, RelationshipInfo
+from app.core.config import settings
 
 
 class PostgresSchemaRepository(SchemaRepository):
-    def __init__(self, connection_factory=None):
+    def __init__(self, connection_factory=None, schema: str | None = None):
         self._conn_factory = connection_factory
+        self._schema = schema or settings.db_schema
 
     def _get_conn(self):
         if self._conn_factory:
@@ -19,9 +21,9 @@ class PostgresSchemaRepository(SchemaRepository):
                 with conn.cursor() as cur:
                     cur.execute("""
                         SELECT table_name FROM information_schema.tables
-                        WHERE table_schema = 'public'
+                        WHERE table_schema = %s
                         ORDER BY table_name
-                    """)
+                    """, (self._schema,))
                     return [row[0] for row in cur.fetchall()]
         return await asyncio.to_thread(_run)
 
@@ -32,9 +34,9 @@ class PostgresSchemaRepository(SchemaRepository):
                     cur.execute("""
                         SELECT column_name, data_type, is_nullable
                         FROM information_schema.columns
-                        WHERE table_schema = 'public' AND table_name = %s
+                        WHERE table_schema = %s AND table_name = %s
                         ORDER BY ordinal_position
-                    """, (table,))
+                    """, (self._schema, table))
                     return [
                         ColumnInfo(
                             name=row[0],
@@ -63,9 +65,9 @@ class PostgresSchemaRepository(SchemaRepository):
                             ON ccu.constraint_name = tc.constraint_name
                             AND ccu.table_schema = tc.table_schema
                         WHERE tc.constraint_type = 'FOREIGN KEY'
-                            AND tc.table_schema = 'public'
+                            AND tc.table_schema = %s
                         ORDER BY tc.table_name, kcu.ordinal_position
-                    """)
+                    """, (self._schema,))
                     return [
                         RelationshipInfo(
                             source_table=row[0],

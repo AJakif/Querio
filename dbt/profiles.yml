@@ -1,0 +1,14 @@
+querio:
+  outputs:
+    dev:
+      type: postgres
+      threads: 4
+      host: "{{ env_var('DBT_HOST', 'localhost') }}"
+      port: "{{ env_var('DBT_PORT', '5432') | int }}"
+      user: "{{ env_var('DBT_USER', 'querio') }}"
+      password: "{{ env_var('DBT_PASSWORD', 'querio') }}"
+      dbname: "{{ env_var('DBT_DBNAME', 'querio') }}"
+      schema: public
+      keepalives_idle: 0
+      connect_timeout: 10
+  target: dev
