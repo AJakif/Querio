@@ -1,12 +1,19 @@
-import type { AskResponse } from '../types/api'
+﻿import type { AskResponse } from '../types/api'
+import { getMockResponse } from '../test/mockData'
 
 const BASE_URL = '/api/ask'
+const USE_MOCK = import.meta.env.VITE_MOCK === 'true'
 
 export async function askQuestion(
   question: string,
   conversation_id?: string,
   clarification_answer?: string,
 ): Promise<AskResponse> {
+  if (USE_MOCK) {
+    await new Promise((r) => setTimeout(r, 50))
+    return getMockResponse(question, conversation_id, clarification_answer)
+  }
+
   const body: Record<string, string> = { question }
 
   if (conversation_id !== undefined) {
