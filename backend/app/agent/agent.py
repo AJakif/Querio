@@ -29,12 +29,22 @@ class SqlGenerator(ABC):
         ...
 
 
+def _extract_generated_sql(result) -> GeneratedSQL:
+    output = getattr(result, "output", None)
+    if output is None:
+        output = getattr(result, "data", None)
+    if output is None:
+        raise AttributeError("AgentRunResult did not contain an 'output' or legacy 'data' attribute.")
+    return output
+
+
 def _build_model(
     model_name: str,
     openai_api_key: str | None,
     anthropic_api_key: str | None,
     ollama_base_url: str | None = None,
 ):
+    logger.debug("Building model adapter", extra={"model_name": model_name})
     provider_name, separator, provider_model = model_name.partition(":")
     if not separator:
         logger.debug("Using raw model name without provider adapter", extra={"model_name": model_name})
@@ -93,14 +103,16 @@ class PydanticAiSqlGenerator(SqlGenerator):
     async def generate(self, question: str) -> GeneratedSQL:
         logger.debug("Generating SQL from model", extra={"question_length": len(question)})
         result = await self._agent.run(question, deps=self._schema_repo)
+        logger.debug(f"Model returned result {result}", extra={"result_type": type(result).__name__})
+        generated = _extract_generated_sql(result)
         logger.debug(
             "Model returned SQL result",
             extra={
-                "requires_clarification": result.data.requires_clarification,
-                "sql_preview": result.data.sql[:120],
+                "requires_clarification": generated.requires_clarification,
+                "sql_preview": generated.sql[:120],
             },
         )
-        return result.data
+        return generated
 
 
 class FakeSqlGenerator(SqlGenerator):

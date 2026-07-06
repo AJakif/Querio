@@ -196,7 +196,9 @@ CREATE TABLE raw.orders (
     order_approved_at TIMESTAMP,
     order_delivered_carrier_date TIMESTAMP,
     order_delivered_customer_date TIMESTAMP,
-    order_estimated_delivery_date TIMESTAMP
+    order_estimated_delivery_date TIMESTAMP,
+    CONSTRAINT fk_orders_customer
+        FOREIGN KEY (customer_id) REFERENCES raw.customers(customer_id)
 );
 
 CREATE TABLE raw.order_items (
@@ -207,7 +209,13 @@ CREATE TABLE raw.order_items (
     shipping_limit_date TIMESTAMP,
     price NUMERIC(10,2),
     freight_value NUMERIC(10,2),
-    PRIMARY KEY (order_id, order_item_id)
+    PRIMARY KEY (order_id, order_item_id),
+    CONSTRAINT fk_order_items_order
+        FOREIGN KEY (order_id) REFERENCES raw.orders(order_id),
+    CONSTRAINT fk_order_items_product
+        FOREIGN KEY (product_id) REFERENCES raw.products(product_id),
+    CONSTRAINT fk_order_items_seller
+        FOREIGN KEY (seller_id) REFERENCES raw.sellers(seller_id)
 );
 
 CREATE TABLE raw.order_payments (
@@ -216,7 +224,9 @@ CREATE TABLE raw.order_payments (
     payment_type VARCHAR(20),
     payment_installments INTEGER,
     payment_value NUMERIC(10,2),
-    PRIMARY KEY (order_id, payment_sequential)
+    PRIMARY KEY (order_id, payment_sequential),
+    CONSTRAINT fk_order_payments_order
+        FOREIGN KEY (order_id) REFERENCES raw.orders(order_id)
 );
 
 CREATE TABLE raw.order_reviews (
@@ -226,7 +236,9 @@ CREATE TABLE raw.order_reviews (
     review_comment_title VARCHAR(200),
     review_comment_message TEXT,
     review_creation_date TIMESTAMP,
-    review_answer_timestamp TIMESTAMP
+    review_answer_timestamp TIMESTAMP,
+    CONSTRAINT fk_order_reviews_order
+        FOREIGN KEY (order_id) REFERENCES raw.orders(order_id)
 );
 
 CREATE TABLE raw.product_category_name_translation (
@@ -474,51 +486,41 @@ def main():
     conn = psycopg2.connect(DSN)
     try:
         with conn.cursor() as cur:
-            # We do NOT commit after schema creation so DROP + CREATE
-            # are atomic with the schema creation as a single unit.
             print("Creating raw schema...")
             cur.execute(RAW_SCHEMA_SQL)
-            conn.commit()
 
             print("Seeding raw.customers...")
             cur.execute(_build_insert("raw.customers", customers))
-            conn.commit()
 
             print("Seeding raw.geolocation...")
             cur.execute(_build_insert("raw.geolocation", geolocation))
-            conn.commit()
 
             print("Seeding raw.products...")
             cur.execute(_build_insert("raw.products", products))
-            conn.commit()
 
             print("Seeding raw.sellers...")
             cur.execute(_build_insert("raw.sellers", sellers))
-            conn.commit()
 
             print("Seeding raw.orders...")
             cur.execute(_build_insert("raw.orders", orders))
-            conn.commit()
 
             print("Seeding raw.order_items...")
             for batch_start in range(0, len(order_items), 500):
                 batch = order_items[batch_start:batch_start + 500]
                 cur.execute(_build_insert("raw.order_items", batch))
-                conn.commit()
 
             print("Seeding raw.order_payments...")
             cur.execute(_build_insert("raw.order_payments", order_payments))
-            conn.commit()
 
             print("Seeding raw.order_reviews...")
             for batch_start in range(0, len(order_reviews), 500):
                 batch = order_reviews[batch_start:batch_start + 500]
                 cur.execute(_build_insert("raw.order_reviews", batch))
-                conn.commit()
 
             print("Seeding raw.product_category_name_translation...")
             cur.execute(_build_insert("raw.product_category_name_translation", categories))
-            conn.commit()
+
+        conn.commit()
 
         total_rows = (
             len(customers) + len(geolocation) + len(products) + len(sellers)

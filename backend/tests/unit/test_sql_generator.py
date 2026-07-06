@@ -1,6 +1,9 @@
+from types import SimpleNamespace
+
 import pytest
 
-from app.agent.agent import GeneratedSQL, SqlGenerator, FakeSqlGenerator
+from app.agent.agent import GeneratedSQL, SqlGenerator, FakeSqlGenerator, _extract_generated_sql
+from app.agent.prompts import SYSTEM_PROMPT
 from app.repositories.base import SchemaRepository, RelationshipInfo
 
 
@@ -50,3 +53,33 @@ class TestFormatSchema:
         assert "customers" in output
         assert "customer_id" in output
         assert "->" in output
+
+
+class TestExtractGeneratedSql:
+    def test_prefers_output_attribute(self):
+        generated = GeneratedSQL(sql="SELECT 1", explanation="ok")
+        result = SimpleNamespace(output=generated)
+
+        assert _extract_generated_sql(result) is generated
+
+    def test_supports_legacy_data_attribute(self):
+        generated = GeneratedSQL(sql="SELECT 1", explanation="ok")
+        result = SimpleNamespace(data=generated)
+
+        assert _extract_generated_sql(result) is generated
+
+    def test_raises_when_result_shape_is_unexpected(self):
+        with pytest.raises(AttributeError):
+            _extract_generated_sql(SimpleNamespace())
+
+
+class TestSystemPrompt:
+    def test_prompt_includes_core_sql_guardrails(self):
+        assert "Use only the tables, columns, and relationships shown in the schema tool." in SYSTEM_PROMPT
+        assert "Never invent tables, columns, aliases, metrics, dimensions, or joins" in SYSTEM_PROMPT
+        assert "Never generate write or admin SQL" in SYSTEM_PROMPT
+        assert "Never query information_schema, pg_catalog, or any system tables." in SYSTEM_PROMPT
+
+    def test_prompt_includes_clarification_guardrails(self):
+        assert "If the question is ambiguous, under-specified, or impossible" in SYSTEM_PROMPT
+        assert "Ask for clarification when the user requests data by a dimension that does not exist" in SYSTEM_PROMPT

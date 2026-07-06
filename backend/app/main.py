@@ -57,6 +57,34 @@ def _build_sql_generator(schema_repo: SchemaRepository) -> SqlGenerator:
     return FakeSqlGenerator()
 
 
+async def _verify_schema_ready(schema_repo: SchemaRepository) -> None:
+    if not isinstance(schema_repo, PostgresSchemaRepository):
+        return
+
+    tables = await schema_repo.get_tables()
+    if not tables:
+        raise RuntimeError(
+            f"Configured database schema '{settings.db_schema}' contains no tables. "
+            "Ensure the seed and dbt steps completed successfully."
+        )
+
+    expected_tables_by_schema = {
+        "marts": {"fct_orders", "dim_customers"},
+    }
+    expected_tables = expected_tables_by_schema.get(settings.db_schema, set())
+    missing_tables = sorted(expected_tables - set(tables))
+    if missing_tables:
+        raise RuntimeError(
+            f"Configured database schema '{settings.db_schema}' is missing expected tables: "
+            f"{', '.join(missing_tables)}. Available tables: {', '.join(tables)}."
+        )
+
+    logger.info(
+        "Verified database schema readiness",
+        extra={"db_schema": settings.db_schema, "table_count": len(tables)},
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global app_state
@@ -71,6 +99,7 @@ async def lifespan(app: FastAPI):
         },
     )
     schema_repo, query_repo = _build_repos()
+    await _verify_schema_ready(schema_repo)
     sql_generator = _build_sql_generator(schema_repo)
     app_state = AppState(
         ask_service=AskService(

@@ -49,6 +49,13 @@ class TestLocalStackComposeContract:
         assert "DB_SCHEMA: marts" in backend_body
         assert "condition: service_completed_successfully" in backend_body
 
+    def test_dbt_service_runs_tests_before_backend_starts(self):
+        compose = _compose_text()
+        dbt_body = _service_body(compose, "dbt")
+
+        assert "dbt run &&" in dbt_body
+        assert "dbt test" in dbt_body
+
     def test_dbt_project_keeps_models_in_plain_marts_schema(self):
         macro_path = REPO_ROOT / "dbt" / "macros" / "generate_schema_name.sql"
 

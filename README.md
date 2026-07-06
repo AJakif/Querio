@@ -243,6 +243,7 @@ PowerShell helper extras:
 .\scripts\querio.ps1 logs
 .\scripts\querio.ps1 ps
 .\scripts\querio.ps1 reset
+.\scripts\querio.ps1 rebuild
 ```
 
 Unix helper extras:
@@ -252,7 +253,10 @@ Unix helper extras:
 ./scripts/querio.sh logs
 ./scripts/querio.sh ps
 ./scripts/querio.sh reset
+./scripts/querio.sh rebuild
 ```
+
+`rebuild` is the destructive option: it removes the Compose containers, volumes, and images for this stack, then runs a fresh `docker compose up --build --force-recreate`.
 
 ### Data pipeline
 

@@ -32,6 +32,7 @@ def test_refresh_pipeline_runs_raw_load_then_dbt_run():
             Path(__file__).resolve().parents[3] / "backend",
         ),
         (("dbt-test", "run"), Path(__file__).resolve().parents[3] / "dbt"),
+        (("dbt-test", "test"), Path(__file__).resolve().parents[3] / "dbt"),
     ]
 
 
@@ -51,6 +52,21 @@ def test_refresh_pipeline_raises_step_name_when_command_fails():
     assert "dbt_run" in str(exc_info.value)
 
 
+def test_refresh_pipeline_raises_for_dbt_test_failures():
+    runner = RecordingRunner(failing_command=("dbt-test", "test"))
+    pipeline = DataRefreshPipeline(
+        command_runner=runner,
+        python_executable="python-test",
+        dbt_executable="dbt-test",
+    )
+
+    with pytest.raises(DataRefreshCommandError) as exc_info:
+        pipeline.run()
+
+    assert exc_info.value.step_name == "dbt_test"
+    assert exc_info.value.command == ("dbt-test", "test")
+
+
 def test_refresh_pipeline_allows_repo_root_override():
     runner = RecordingRunner()
     pipeline = DataRefreshPipeline(
@@ -65,4 +81,5 @@ def test_refresh_pipeline_allows_repo_root_override():
     assert runner.calls == [
         (("python-test", "scripts/append_synthetic_orders.py"), Path("D:/tmp/querio/backend")),
         (("dbt-test", "run"), Path("D:/tmp/querio/dbt")),
+        (("dbt-test", "test"), Path("D:/tmp/querio/dbt")),
     ]

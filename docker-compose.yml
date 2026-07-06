@@ -45,7 +45,8 @@ services:
       sh -c "
         pip install dbt-postgres -q &&
         dbt deps &&
-        dbt run
+        dbt run &&
+        dbt test
       "
 
   airflow:

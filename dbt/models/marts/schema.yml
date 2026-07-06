@@ -15,8 +15,14 @@ models:
         description: Foreign key to dim_customers
         tests:
           - not_null
+          - relationships:
+              to: ref('dim_customers')
+              field: customer_id
       - name: order_status
         description: Current delivery status
+        tests:
+          - accepted_values:
+              values: ['delivered', 'shipped', 'processing', 'canceled', 'invoiced']
       - name: total_items
         description: Number of distinct line items in the order
       - name: total_item_value
@@ -25,6 +31,9 @@ models:
         description: Total payment value (matches total_item_value)
       - name: payment_type
         description: Primary payment method
+        tests:
+          - accepted_values:
+              values: ['credit_card', 'boleto', 'debit_card', 'voucher']
       - name: payment_installments
         description: Number of installments
       - name: order_purchase_timestamp

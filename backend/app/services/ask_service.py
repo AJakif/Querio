@@ -85,7 +85,8 @@ class AskService:
         conversation_id: str | None = None,
         request_id: str | None = None,
         started_at: float | None = None,
-    ) -> Answer:
+        allow_repair: bool = True,
+    ) -> Answer | ClarifyingQuestion:
         safe_sql, error = validate_sql(generated.sql, max_rows=settings.max_rows)
         if error:
             logger.warning(
@@ -102,8 +103,38 @@ class AskService:
 
         logger.debug("Executing SQL", extra={"request_id": request_id, "conversation_id": conversation_id, "sql": safe_sql})
         try:
-            rows = await self._query_repo.execute(safe_sql)
-        except Exception:
+            rows = await self._query_repo.execute(safe_sql or generated.sql)
+        except Exception as exc:
+            if allow_repair and _is_retriable_schema_error(exc):
+                logger.warning(
+                    "SQL execution failed with retriable schema error; requesting model correction",
+                    extra={
+                        "request_id": request_id,
+                        "conversation_id": conversation_id,
+                        "generated_sql": generated.sql,
+                        "error_type": exc.__class__.__name__,
+                        "execution_time_ms": _elapsed_ms(started_at),
+                    },
+                )
+                repaired = await self._sql_generator.generate(
+                    _build_repair_prompt(question, generated.sql, exc)
+                )
+                if repaired.requires_clarification:
+                    conv_id = self._conversation_store.create(question, repaired.clarification_options)
+                    return ClarifyingQuestion(
+                        question=repaired.clarification_question or "What did you mean?",
+                        options=repaired.clarification_options,
+                        conversation_id=conv_id,
+                    )
+                return await self._do_execute(
+                    repaired,
+                    question,
+                    conversation_id,
+                    request_id,
+                    started_at,
+                    allow_repair=False,
+                )
+
             logger.exception(
                 "SQL execution failed",
                 extra={
@@ -155,7 +186,7 @@ class AskService:
         conversation_id: str,
         request_id: str | None = None,
         started_at: float | None = None,
-    ) -> Answer:
+    ) -> Answer | ClarifyingQuestion:
         generated = await self._sql_generator.generate(question)
         return await self._do_execute(generated, question, conversation_id, request_id, started_at)
 
@@ -180,6 +211,32 @@ def _combine_clarification(original_question: str, clarification_answer: str) ->
         "Clarification answer: "
         f"{clarification_answer}\n"
         "Answer the original question using the clarification."
+    )
+
+
+def _is_retriable_schema_error(exc: Exception) -> bool:
+    error_name = exc.__class__.__name__.lower()
+    message = str(exc).lower()
+    schema_error_markers = (
+        "undefinedcolumn",
+        "undefinedtable",
+        "ambiguouscolumn",
+        "ambiguousalias",
+        "undefined function",
+        "column",
+        "relation",
+        "does not exist",
+    )
+    return any(marker in error_name or marker in message for marker in schema_error_markers)
+
+
+def _build_repair_prompt(question: str, failed_sql: str, exc: Exception) -> str:
+    return (
+        f"Original user question:\n{question}\n\n"
+        f"The previous SQL failed:\n{failed_sql}\n\n"
+        f"Database error:\n{exc}\n\n"
+        "Correct the SQL using only tables and columns that exist in the schema tool. "
+        "If the question cannot be answered with the available schema, set requires_clarification to true."
     )
 
 

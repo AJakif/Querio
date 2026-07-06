@@ -9,6 +9,9 @@ logger = get_logger("agent.tools")
 
 async def format_schema(repo: SchemaRepository) -> str:
     tables = await repo.get_tables()
+    if not tables:
+        logger.error("Schema tool found no tables")
+        raise RuntimeError("No tables were found in the configured database schema.")
     logger.debug("Formatting schema for agent", extra={"table_count": len(tables)})
     parts = []
     for table in tables:

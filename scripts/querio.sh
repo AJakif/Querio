@@ -18,6 +18,7 @@ Usage:
   ./scripts/querio.sh down         # stop and remove containers
   ./scripts/querio.sh stop         # alias for down
   ./scripts/querio.sh reset        # stop everything and delete volumes
+  ./scripts/querio.sh rebuild      # delete containers, volumes, images, then rebuild from scratch
   ./scripts/querio.sh logs         # stream logs
   ./scripts/querio.sh ps           # show container status
   ./scripts/querio.sh help         # show this help
@@ -70,6 +71,28 @@ case "${ACTION}" in
     ;;
   reset)
     run_compose down --volumes
+    ;;
+  rebuild)
+    run_compose down --volumes --rmi all --remove-orphans
+
+    args=(up --build --force-recreate)
+    if [[ "${DETACHED}" == "-d" || "${DETACHED}" == "--detached" ]]; then
+      args+=(-d)
+    elif [[ -n "${DETACHED}" ]]; then
+      echo "Unknown option for 'rebuild': ${DETACHED}" >&2
+      exit 1
+    fi
+
+    run_compose "${args[@]}"
+
+    if [[ "${DETACHED}" == "-d" || "${DETACHED}" == "--detached" ]]; then
+      echo
+      echo "Querio has been rebuilt and is starting in the background."
+    fi
+
+    echo "Frontend: http://localhost:3000"
+    echo "Backend:  http://localhost:8000/docs"
+    echo "Airflow:  http://localhost:8081"
     ;;
   logs)
     run_compose logs -f

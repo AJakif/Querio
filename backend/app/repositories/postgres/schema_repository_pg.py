@@ -1,10 +1,21 @@
 import asyncio
+from collections.abc import Mapping, Sequence
+
+from psycopg2.extras import RealDictCursor
 
 from app.core.logging import get_logger
 from app.repositories.base import SchemaRepository, ColumnInfo, RelationshipInfo
 from app.core.config import settings
 
 logger = get_logger("repositories.postgres.schema")
+
+
+def _row_value(row, key: str, index: int):
+    if isinstance(row, Mapping):
+        return row[key]
+    if isinstance(row, Sequence) and not isinstance(row, (str, bytes, bytearray)):
+        return row[index]
+    raise TypeError(f"Unsupported row type returned from schema query: {type(row)!r}")
 
 
 class PostgresSchemaRepository(SchemaRepository):
@@ -22,13 +33,13 @@ class PostgresSchemaRepository(SchemaRepository):
         def _run():
             logger.debug("Loading schema tables", extra={"schema": self._schema})
             with self._get_conn() as conn:
-                with conn.cursor() as cur:
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
                     cur.execute("""
                         SELECT table_name FROM information_schema.tables
                         WHERE table_schema = %s
                         ORDER BY table_name
                     """, (self._schema,))
-                    rows = [row[0] for row in cur.fetchall()]
+                    rows = [_row_value(row, "table_name", 0) for row in cur.fetchall()]
                     logger.info("Loaded schema tables", extra={"schema": self._schema, "table_count": len(rows)})
                     return rows
         return await asyncio.to_thread(_run)
@@ -37,7 +48,7 @@ class PostgresSchemaRepository(SchemaRepository):
         def _run():
             logger.debug("Loading table columns", extra={"schema": self._schema, "table": table})
             with self._get_conn() as conn:
-                with conn.cursor() as cur:
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
                     cur.execute("""
                         SELECT column_name, data_type, is_nullable
                         FROM information_schema.columns
@@ -46,9 +57,9 @@ class PostgresSchemaRepository(SchemaRepository):
                     """, (self._schema, table))
                     columns = [
                         ColumnInfo(
-                            name=row[0],
-                            data_type=row[1],
-                            is_nullable=row[2] == "YES",
+                            name=_row_value(row, "column_name", 0),
+                            data_type=_row_value(row, "data_type", 1),
+                            is_nullable=_row_value(row, "is_nullable", 2) == "YES",
                         )
                         for row in cur.fetchall()
                     ]
@@ -63,7 +74,7 @@ class PostgresSchemaRepository(SchemaRepository):
         def _run():
             logger.debug("Loading schema relationships", extra={"schema": self._schema})
             with self._get_conn() as conn:
-                with conn.cursor() as cur:
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
                     cur.execute("""
                         SELECT
                             kcu.table_name AS source_table,
@@ -83,10 +94,10 @@ class PostgresSchemaRepository(SchemaRepository):
                     """, (self._schema,))
                     relationships = [
                         RelationshipInfo(
-                            source_table=row[0],
-                            source_column=row[1],
-                            target_table=row[2],
-                            target_column=row[3],
+                            source_table=_row_value(row, "source_table", 0),
+                            source_column=_row_value(row, "source_column", 1),
+                            target_table=_row_value(row, "target_table", 2),
+                            target_column=_row_value(row, "target_column", 3),
                         )
                         for row in cur.fetchall()
                     ]

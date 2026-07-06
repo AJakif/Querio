@@ -67,6 +67,11 @@ class DataRefreshPipeline:
                 command=(self._dbt_executable, "run"),
                 cwd=self._repo_root / "dbt",
             ),
+            RefreshStep(
+                name="dbt_test",
+                command=(self._dbt_executable, "test"),
+                cwd=self._repo_root / "dbt",
+            ),
         ]
 
     @staticmethod

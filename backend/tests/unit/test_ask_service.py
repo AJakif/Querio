@@ -58,6 +58,36 @@ class FakeSqlGeneratorClarifyAnswer(FakeSqlGenerator):
         )
 
 
+class FakeSqlGeneratorRepairing(FakeSqlGenerator):
+    def __init__(self):
+        self.calls: list[str] = []
+
+    async def generate(self, question: str) -> GeneratedSQL:
+        self.calls.append(question)
+        if "The previous SQL failed" in question:
+            return GeneratedSQL(
+                sql="SELECT order_id, total_payment_value FROM fct_orders LIMIT 5",
+                explanation="Listing orders by payment value.",
+            )
+        return GeneratedSQL(
+            sql="SELECT f.product_id, SUM(f.total_payment_value) AS total_revenue FROM fct_orders AS f GROUP BY f.product_id LIMIT 5",
+            explanation="Summing revenue by product.",
+        )
+
+
+class FakeQueryRepositorySchemaErrorThenSuccess:
+    def __init__(self):
+        self.calls: list[str] = []
+        self._failed = False
+
+    async def execute(self, sql: str) -> list[dict]:
+        self.calls.append(sql)
+        if not self._failed:
+            self._failed = True
+            raise RuntimeError('column f.product_id does not exist')
+        return [{"order_id": "ORD001", "total_payment_value": 123.45}]
+
+
 class TestAskService:
     @pytest.fixture
     def schema_repo(self):
@@ -242,3 +272,23 @@ class TestAskService:
         )
         assert isinstance(result, Answer)
         assert "conversation" in result.text.lower() or "try again" in result.text.lower()
+
+    @pytest.mark.asyncio
+    async def test_schema_error_triggers_single_sql_repair_attempt(self, schema_repo):
+        from app.services.ask_service import AskService
+
+        sql_gen = FakeSqlGeneratorRepairing()
+        query_repo = FakeQueryRepositorySchemaErrorThenSuccess()
+        service = AskService(
+            sql_generator=sql_gen,
+            schema_repository=schema_repo,
+            query_repository=query_repo,
+        )
+
+        result = await service.answer("What were the top 5 products by revenue last quarter?")
+
+        assert isinstance(result, Answer)
+        assert "123.45" in result.text
+        assert len(sql_gen.calls) == 2
+        assert "The previous SQL failed" in sql_gen.calls[1]
+        assert len(query_repo.calls) == 2

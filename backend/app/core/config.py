@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://querio:querio@localhost:5432/querio"
     database_url_file: str | None = None
     model_provider: str | None = None
-    model_name: str = "openai:gpt-4o-mini"
+    model_name: str = "openai:gpt-4o"
     ollama_model: str = "llama3.1"
     ollama_base_url: str = "http://localhost:11434/v1"
     openai_api_key: SecretStr | None = Field(default=None, repr=False)

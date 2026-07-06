@@ -24,6 +24,7 @@ class PostgresQueryRepository(QueryRepository):
             with self._get_conn() as conn:
                 with conn.cursor(cursor_factory=RealDictCursor) as cur:
                     cur.execute("SET TRANSACTION READ ONLY")
+                    cur.execute("SELECT set_config('search_path', %s, true)", (f"{settings.db_schema},public",))
                     cur.execute("SET LOCAL statement_timeout = %s", (settings.query_timeout_ms,))
                     logger.debug("Executing Postgres query", extra={"sql": sql})
                     cur.execute(sql)

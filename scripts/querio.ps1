@@ -1,6 +1,6 @@
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("up", "down", "stop", "reset", "logs", "ps", "help")]
+    [ValidateSet("up", "down", "stop", "reset", "rebuild", "logs", "ps", "help")]
     [string]$Action = "up",
 
     [switch]$Detached
@@ -36,6 +36,7 @@ function Show-Help {
     Write-Host "  .\scripts\querio.ps1 up        # start the full stack"
     Write-Host "  .\scripts\querio.ps1 down      # stop and remove containers"
     Write-Host "  .\scripts\querio.ps1 reset     # stop everything and delete volumes"
+    Write-Host "  .\scripts\querio.ps1 rebuild   # delete containers, volumes, images, then rebuild from scratch"
     Write-Host "  .\scripts\querio.ps1 logs      # stream logs"
     Write-Host "  .\scripts\querio.ps1 ps        # show container status"
     Write-Host ""
@@ -84,6 +85,25 @@ switch ($Action) {
     }
     "reset" {
         Invoke-Compose -Arguments @("down", "--volumes")
+    }
+    "rebuild" {
+        Invoke-Compose -Arguments @("down", "--volumes", "--rmi", "all", "--remove-orphans")
+
+        $args = @("up", "--build", "--force-recreate")
+        if ($Detached) {
+            $args += "-d"
+        }
+
+        Invoke-Compose -Arguments $args
+
+        if ($Detached) {
+            Write-Host ""
+            Write-Host "Querio has been rebuilt and is starting in the background."
+        }
+
+        Write-Host "Frontend: http://localhost:3000"
+        Write-Host "Backend:  http://localhost:8000/docs"
+        Write-Host "Airflow:  http://localhost:8081"
     }
     "logs" {
         Invoke-Compose -Arguments @("logs", "-f")
