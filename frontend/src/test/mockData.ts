@@ -375,6 +375,7 @@ export function getMockResponse(
       return {
         type: 'answer',
         answer: 'The total count is **9,940 customers** and **12,458 orders**.',
+        chart: null,
         sql: { sql: 'SELECT (SELECT COUNT(*) FROM customers) AS customers, (SELECT COUNT(*) FROM orders) AS orders', explanation: 'Counting total customers and orders.' },
         conversation_id,
       }
@@ -383,6 +384,7 @@ export function getMockResponse(
       return {
         type: 'answer',
         answer: 'Here are the top 10 customers by order count:\n1. Customer #15983 — 12 orders\n2. Customer #20541 — 11 orders\n3. Customer #8712 — 9 orders\n4. Customer #44301 — 9 orders\n5. Customer #36789 — 8 orders\n6. Customer #11234 — 8 orders\n7. Customer #55890 — 7 orders\n8. Customer #67211 — 7 orders\n9. Customer #33451 — 6 orders\n10. Customer #78901 — 6 orders',
+        chart: null,
         sql: { sql: 'SELECT c.customer_unique_id, COUNT(*) AS order_count FROM customers c JOIN orders o ON c.customer_id = o.customer_id GROUP BY c.customer_unique_id ORDER BY order_count DESC LIMIT 10', explanation: 'Top customers by order frequency.' },
         conversation_id,
       }
@@ -470,6 +472,7 @@ export function getMockResponse(
       return {
         type: 'answer',
         answer: 'There are **71 product categories**. The most diverse category is **Furniture & Decor** with 2,345 unique products.',
+        chart: null,
         sql: { sql: 'SELECT COUNT(DISTINCT product_category_name) AS category_count FROM products', explanation: 'Counting distinct product categories.' },
         conversation_id,
       }
@@ -478,6 +481,7 @@ export function getMockResponse(
       return {
         type: 'answer',
         answer: 'We have **32,951** unique products across **71** categories.',
+        chart: null,
         sql: { sql: 'SELECT COUNT(*) AS total_products, COUNT(DISTINCT product_category_name) AS categories FROM products', explanation: 'Product inventory count.' },
         conversation_id,
       }
@@ -485,6 +489,7 @@ export function getMockResponse(
     return {
       type: 'answer',
       answer: `Here are the results for "${question}" with filter "${clarification_answer}".`,
+      chart: null,
       sql: { sql: `SELECT * FROM ${question.replace(/\s+/g, '_')} WHERE ${clarification_answer} IS NOT NULL LIMIT 100`, explanation: 'Query filtered by your selection.' },
       conversation_id,
     }

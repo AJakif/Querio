@@ -40,6 +40,6 @@ class PydanticAiSqlGenerator(SqlGenerator):
 class FakeSqlGenerator(SqlGenerator):
     async def generate(self, question: str) -> GeneratedSQL:
         return GeneratedSQL(
-            sql="SELECT COUNT(*) AS order_count FROM orders",
-            explanation="Counting all orders in the database.",
+            sql="SELECT COUNT(*) AS order_count FROM marts.fct_orders",
+            explanation="Counting all orders in the marts fact table.",
         )
