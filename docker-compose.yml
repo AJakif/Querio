@@ -48,6 +48,32 @@ services:
         dbt run
       "
 
+  airflow:
+    image: apache/airflow:2.10.5-python3.12
+    depends_on:
+      postgres:
+        condition: service_healthy
+      dbt:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      DATABASE_URL: postgresql://querio:querio@postgres:5432/querio
+      _PIP_ADDITIONAL_REQUIREMENTS: psycopg2-binary dbt-postgres
+    volumes:
+      - ./infra/airflow/dags:/opt/airflow/dags
+      - ./backend:/opt/querio/backend
+      - ./dbt:/opt/querio/dbt
+      - airflow_home:/opt/airflow
+    ports:
+      - "8081:8080"
+    command: standalone
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
   backend:
     build:
       context: backend
@@ -86,3 +112,4 @@ services:
 
 volumes:
   pgdata:
+  airflow_home:

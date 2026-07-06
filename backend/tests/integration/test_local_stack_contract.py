@@ -28,6 +28,7 @@ class TestLocalStackComposeContract:
 
         assert "services:" in compose
         assert "  postgres:\n" in compose
+        assert "  airflow:\n" in compose
         assert "  backend:\n" in compose
         assert "  frontend:\n" in compose
 
@@ -55,6 +56,16 @@ class TestLocalStackComposeContract:
             "dbt should override schema-name generation so models build into "
             "the plain marts schema instead of an auto-prefixed variant."
         )
+
+    def test_airflow_service_exposes_ui_and_mounts_repo_assets(self):
+        compose = _compose_text()
+        airflow_body = _service_body(compose, "airflow")
+
+        assert '8081:8080' in airflow_body
+        assert './infra/airflow/dags:/opt/airflow/dags' in airflow_body
+        assert './backend:/opt/querio/backend' in airflow_body
+        assert './dbt:/opt/querio/dbt' in airflow_body
+        assert 'command: standalone' in airflow_body
 
 
 class TestFrontendProxyContract:
@@ -89,3 +100,11 @@ class TestReviewerDocsContract:
             "README should document the actual env contract used by the backend, "
             "not a different provider switch that the app does not read."
         )
+
+    def test_readme_documents_airflow_refresh_flow(self):
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+        assert "http://localhost:8081" in readme
+        assert "scheduled_data_refresh" in readme
+        assert "append_synthetic_orders.py" in readme
+        assert "run history" in readme.lower()

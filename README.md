@@ -201,16 +201,56 @@ docker compose up
 
 Then open `http://localhost:3000` (or whatever port the frontend maps to) and start asking questions.
 
+If you want a shorter local command on Windows/PowerShell, use:
+
+```powershell
+.\scripts\querio.ps1 up
+```
+
+On Linux/macOS, use:
+
+```bash
+./scripts/querio.sh up
+```
+
 To stop the stack:
 
 ```bash
 docker compose down
 ```
 
+Or:
+
+```powershell
+.\scripts\querio.ps1 down
+```
+
+```bash
+./scripts/querio.sh down
+```
+
 To fully reset Postgres data and trigger a clean re-seed on the next startup:
 
 ```bash
 docker compose down --volumes
+```
+
+PowerShell helper extras:
+
+```powershell
+.\scripts\querio.ps1 up -Detached
+.\scripts\querio.ps1 logs
+.\scripts\querio.ps1 ps
+.\scripts\querio.ps1 reset
+```
+
+Unix helper extras:
+
+```bash
+./scripts/querio.sh up -d
+./scripts/querio.sh logs
+./scripts/querio.sh ps
+./scripts/querio.sh reset
 ```
 
 ### Data pipeline
@@ -222,8 +262,9 @@ docker compose down --volumes
 3. **dbt** runs `dbt run`, which transforms `raw` → `marts` schema producing two analytical models:
    - `fct_orders` — order-level fact table (orders + items + payments)
    - `dim_customers` — customer dimension with aggregated order metrics
-4. **Backend** starts, configured to read schema from the `marts` schema (`DB_SCHEMA=marts`).
-5. **Frontend** starts, serving the chat UI.
+4. **Airflow** starts at `http://localhost:8081` and loads the `scheduled_data_refresh` DAG so refresh runs and run history are visible in the UI.
+5. **Backend** starts, configured to read schema from the `marts` schema (`DB_SCHEMA=marts`).
+6. **Frontend** starts, serving the chat UI.
 
 The agent queries the clean `marts` schema tables — not the raw normalized tables — so joins are simpler and query generation is more reliable.
 
@@ -290,6 +331,15 @@ cd dbt && dbt run
 ```
 
 The seed script uses a fixed random seed (`SEED = 42`), so every run produces identical results. This guarantees reproducible data for development, testing, and demo purposes.
+
+### Scheduled refresh with Airflow
+
+The `scheduled_data_refresh` DAG runs hourly and uses `python scripts/append_synthetic_orders.py` to append new synthetic orders into the raw schema instead of replaying the same seed from scratch. It then runs `dbt run` so the `marts` schema reflects the added rows.
+
+- Open `http://localhost:8081` to inspect the Airflow UI.
+- Trigger `scheduled_data_refresh` manually or wait for the next schedule.
+- Confirm run history and task logs in Airflow after each refresh.
+- Ask a freshness-sensitive question after the run to verify the rebuilt marts tables reflect the new orders.
 
 ---
 
