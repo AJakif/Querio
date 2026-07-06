@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends
 
+from app.core.logging import get_logger
 from app.schemas.ask import AskRequest, AnswerResponse, ClarifyingQuestionResponse, ChartSpecResponse, SqlQueryResponse
 from app.services.ask_service import AskService
 from app.domain.models import Answer, ClarifyingQuestion
 
 router = APIRouter()
+logger = get_logger("api.ask")
 
 
 async def get_ask_service() -> AskService:
@@ -17,6 +19,14 @@ async def ask(
     body: AskRequest,
     service: AskService = Depends(get_ask_service),
 ) -> AnswerResponse | ClarifyingQuestionResponse:
+    logger.info(
+        "Received /ask request",
+        extra={
+            "conversation_id": body.conversation_id,
+            "has_clarification_answer": body.clarification_answer is not None,
+            "question_length": len(body.question),
+        },
+    )
     result = await service.answer(
         question=body.question,
         conversation_id=body.conversation_id,
@@ -24,6 +34,13 @@ async def ask(
     )
 
     if isinstance(result, ClarifyingQuestion):
+        logger.info(
+            "Returning clarification response",
+            extra={
+                "conversation_id": result.conversation_id,
+                "options_count": len(result.options),
+            },
+        )
         return ClarifyingQuestionResponse(
             question=result.question,
             options=result.options,
@@ -47,6 +64,14 @@ async def ask(
             explanation=result.sql.explanation,
         )
 
+    logger.info(
+        "Returning answer response",
+        extra={
+            "conversation_id": result.conversation_id,
+            "has_sql": result.sql is not None,
+            "has_chart": result.chart is not None,
+        },
+    )
     return AnswerResponse(
         answer=result.text,
         chart=chart_response,

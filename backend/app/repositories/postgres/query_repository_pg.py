@@ -1,7 +1,10 @@
 import asyncio
 from psycopg2.extras import RealDictCursor
 
+from app.core.logging import get_logger
 from app.repositories.base import QueryRepository
+
+logger = get_logger("repositories.postgres.query")
 
 
 class PostgresQueryRepository(QueryRepository):
@@ -16,8 +19,12 @@ class PostgresQueryRepository(QueryRepository):
 
     async def execute(self, sql: str) -> list[dict]:
         def _run():
+            logger.debug("Opening Postgres connection for query execution")
             with self._get_conn() as conn:
                 with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                    logger.debug("Executing Postgres query", extra={"sql": sql})
                     cur.execute(sql)
-                    return [dict(row) for row in cur.fetchall()]
+                    rows = [dict(row) for row in cur.fetchall()]
+                    logger.info("Postgres query completed", extra={"row_count": len(rows)})
+                    return rows
         return await asyncio.to_thread(_run)

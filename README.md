@@ -196,6 +196,7 @@ The project works with deterministic synthetic data that mirrors the Olist schem
 git clone <repo-url>
 cd querio
 cp .env.example .env
+cp .env.secrets.example .env.secrets
 docker compose up
 ```
 
@@ -270,13 +271,20 @@ The agent queries the clean `marts` schema tables — not the raw normalized tab
 
 ### Configuring the model
 
-Querio's LLM is chosen entirely via env config — no code changes needed to switch:
+Querio's LLM is chosen entirely via config — no code changes needed to switch:
 
 ```bash
 # .env
+APP_ENV=dev
 DATABASE_URL=postgresql://querio:querio@localhost:5432/querio
 DB_SCHEMA=marts
 MODEL_NAME=openai:gpt-4o-mini
+LOG_LEVEL=
+QUERIO_SECRETS_FILE=.env.secrets
+```
+
+```bash
+# .env.secrets
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
 ```
@@ -286,7 +294,24 @@ Examples:
 - `MODEL_NAME=openai:gpt-4o-mini` with `OPENAI_API_KEY=...`
 - `MODEL_NAME=anthropic:claude-3-5-sonnet-latest` with `ANTHROPIC_API_KEY=...`
 
+The backend loads secrets in this order:
+
+- direct env vars like `OPENAI_API_KEY`
+- file paths like `OPENAI_API_KEY_FILE`
+- the dotenv-style file pointed to by `QUERIO_SECRETS_FILE`
+
+The default Docker setup mounts `./.env.secrets` read-only into the container and reads `/run/secrets/querio.env`, so provider keys do not need to appear in `docker-compose.yml` or your main `.env`.
+
 If both API keys are blank, Querio falls back to its built-in fake SQL generator so the local stack can still boot for wiring checks, but real natural-language SQL generation requires a valid provider API key.
+
+### Logging
+
+The backend logger is environment-aware:
+
+- `APP_ENV=dev` uses a human-readable console format and defaults to `DEBUG`
+- `APP_ENV=prod` uses structured JSON logs and defaults to `INFO`
+- logs are also written to `backend/logs/querio.log`
+- `LOG_LEVEL` can override either default when you need a specific level
 
 ---
 

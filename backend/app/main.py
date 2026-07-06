@@ -4,6 +4,8 @@ from os import environ
 
 from fastapi import FastAPI
 
+from app.core.config import settings
+from app.core.logging import configure_logging, get_logger
 from app.api.routes.ask import router as ask_router
 from app.services.ask_service import AskService
 from app.repositories.base import SchemaRepository, QueryRepository
@@ -20,6 +22,7 @@ class AppState:
 
 
 app_state: AppState | None = None
+logger = get_logger("main")
 
 
 def _has_env(key: str) -> bool:
@@ -28,21 +31,37 @@ def _has_env(key: str) -> bool:
 
 def _build_repos() -> tuple[SchemaRepository, QueryRepository]:
     if _has_env("DATABASE_URL"):
-        from app.core.config import settings
+        logger.info("Using Postgres repositories", extra={"db_schema": settings.db_schema})
         return PostgresSchemaRepository(schema=settings.db_schema), PostgresQueryRepository()
+    logger.warning("DATABASE_URL not set, using in-memory repositories")
     return InMemorySchemaRepository(), InMemoryQueryRepository()
 
 
 def _build_sql_generator(schema_repo: SchemaRepository) -> SqlGenerator:
-    if _has_env("OPENAI_API_KEY") or _has_env("ANTHROPIC_API_KEY"):
-        from app.core.config import settings
-        return PydanticAiSqlGenerator(settings.model_name, schema_repo)
+    if settings.has_llm_api_key:
+        logger.info("Using provider-backed SQL generator", extra={"model_name": settings.model_name})
+        return PydanticAiSqlGenerator(
+            settings.model_name,
+            schema_repo,
+            openai_api_key=settings.openai_api_key.get_secret_value() if settings.openai_api_key else None,
+            anthropic_api_key=settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None,
+        )
+    logger.warning("No LLM API keys configured, using fake SQL generator")
     return FakeSqlGenerator()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global app_state
+    configure_logging(settings)
+    logger.info(
+        "Starting Querio API",
+        extra={
+            "app_env": settings.normalized_app_env,
+            "db_schema": settings.db_schema,
+            "llm_enabled": settings.has_llm_api_key,
+        },
+    )
     schema_repo, query_repo = _build_repos()
     sql_generator = _build_sql_generator(schema_repo)
     app_state = AppState(
@@ -53,6 +72,7 @@ async def lifespan(app: FastAPI):
         ),
     )
     yield
+    logger.info("Shutting down Querio API")
     app_state = None
 
 

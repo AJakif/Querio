@@ -4,6 +4,10 @@ from app.agent.agent import SqlGenerator, GeneratedSQL
 from app.guardrails.sql_validator import validate_sql
 from app.services.conversation_store import ConversationStore
 from app.core.config import settings
+from app.core.logging import get_logger
+
+
+logger = get_logger("ask_service")
 
 
 class AskService:
@@ -25,9 +29,17 @@ class AskService:
         conversation_id: str | None = None,
         clarification_answer: str | None = None,
     ) -> Answer | ClarifyingQuestion:
+        logger.info(
+            "Processing ask request",
+            extra={
+                "conversation_id": conversation_id,
+                "has_clarification_answer": clarification_answer is not None,
+            },
+        )
         if conversation_id and clarification_answer is not None:
             ctx = self._conversation_store.get(conversation_id)
             if ctx is None:
+                logger.warning("Conversation not found", extra={"conversation_id": conversation_id})
                 return Answer(text="Sorry, I couldn't find that conversation. Please try asking your question again.")
             self._conversation_store.complete(conversation_id)
             return await self._execute_answer(question, conversation_id)
@@ -36,6 +48,10 @@ class AskService:
 
         if generated.requires_clarification:
             conv_id = self._conversation_store.create(question, generated.clarification_options)
+            logger.info(
+                "Clarification required",
+                extra={"conversation_id": conv_id, "options_count": len(generated.clarification_options)},
+            )
             return ClarifyingQuestion(
                 question=generated.clarification_question or "What did you mean?",
                 options=generated.clarification_options,
@@ -49,11 +65,21 @@ class AskService:
     ) -> Answer:
         safe_sql, error = validate_sql(generated.sql, max_rows=settings.max_rows)
         if error:
+            logger.warning(
+                "SQL blocked by guardrail",
+                extra={"conversation_id": conversation_id, "sql_preview": generated.sql[:120]},
+            )
             return Answer(text=error, conversation_id=conversation_id)
 
+        logger.debug("Executing SQL", extra={"conversation_id": conversation_id, "sql": safe_sql})
         rows = await self._query_repo.execute(safe_sql)
+        logger.info(
+            "SQL executed",
+            extra={"conversation_id": conversation_id, "row_count": len(rows)},
+        )
 
         if not rows:
+            logger.info("Query returned no rows", extra={"conversation_id": conversation_id})
             return Answer(
                 text="The query returned no results.",
                 sql=SqlQuery(sql=generated.sql, explanation=generated.explanation),

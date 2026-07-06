@@ -84,8 +84,9 @@ services:
       DATABASE_URL: postgresql://querio:querio@postgres:5432/querio
       DB_SCHEMA: marts
       MODEL_NAME: ${MODEL_NAME:-openai:gpt-4o-mini}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      QUERIO_SECRETS_FILE: /run/secrets/querio.env
+    volumes:
+      - ./.env.secrets:/run/secrets/querio.env:ro
     ports:
       - "8000:8000"
     healthcheck:

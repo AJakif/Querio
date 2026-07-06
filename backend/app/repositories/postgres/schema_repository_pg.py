@@ -1,7 +1,10 @@
 import asyncio
 
+from app.core.logging import get_logger
 from app.repositories.base import SchemaRepository, ColumnInfo, RelationshipInfo
 from app.core.config import settings
+
+logger = get_logger("repositories.postgres.schema")
 
 
 class PostgresSchemaRepository(SchemaRepository):
@@ -17,6 +20,7 @@ class PostgresSchemaRepository(SchemaRepository):
 
     async def get_tables(self) -> list[str]:
         def _run():
+            logger.debug("Loading schema tables", extra={"schema": self._schema})
             with self._get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute("""
@@ -24,11 +28,14 @@ class PostgresSchemaRepository(SchemaRepository):
                         WHERE table_schema = %s
                         ORDER BY table_name
                     """, (self._schema,))
-                    return [row[0] for row in cur.fetchall()]
+                    rows = [row[0] for row in cur.fetchall()]
+                    logger.info("Loaded schema tables", extra={"schema": self._schema, "table_count": len(rows)})
+                    return rows
         return await asyncio.to_thread(_run)
 
     async def get_columns(self, table: str) -> list[ColumnInfo]:
         def _run():
+            logger.debug("Loading table columns", extra={"schema": self._schema, "table": table})
             with self._get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute("""
@@ -37,7 +44,7 @@ class PostgresSchemaRepository(SchemaRepository):
                         WHERE table_schema = %s AND table_name = %s
                         ORDER BY ordinal_position
                     """, (self._schema, table))
-                    return [
+                    columns = [
                         ColumnInfo(
                             name=row[0],
                             data_type=row[1],
@@ -45,10 +52,16 @@ class PostgresSchemaRepository(SchemaRepository):
                         )
                         for row in cur.fetchall()
                     ]
+                    logger.info(
+                        "Loaded table columns",
+                        extra={"schema": self._schema, "table": table, "column_count": len(columns)},
+                    )
+                    return columns
         return await asyncio.to_thread(_run)
 
     async def get_relationships(self) -> list[RelationshipInfo]:
         def _run():
+            logger.debug("Loading schema relationships", extra={"schema": self._schema})
             with self._get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute("""
@@ -68,7 +81,7 @@ class PostgresSchemaRepository(SchemaRepository):
                             AND tc.table_schema = %s
                         ORDER BY tc.table_name, kcu.ordinal_position
                     """, (self._schema,))
-                    return [
+                    relationships = [
                         RelationshipInfo(
                             source_table=row[0],
                             source_column=row[1],
@@ -77,4 +90,9 @@ class PostgresSchemaRepository(SchemaRepository):
                         )
                         for row in cur.fetchall()
                     ]
+                    logger.info(
+                        "Loaded schema relationships",
+                        extra={"schema": self._schema, "relationship_count": len(relationships)},
+                    )
+                    return relationships
         return await asyncio.to_thread(_run)

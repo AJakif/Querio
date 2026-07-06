@@ -84,6 +84,7 @@ class TestReviewerDocsContract:
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 
         assert "cp .env.example .env" in readme
+        assert "cp .env.secrets.example .env.secrets" in readme
         assert "docker compose up" in readme
         assert "http://localhost:3000" in readme
         assert "docker compose down" in readme
@@ -91,11 +92,13 @@ class TestReviewerDocsContract:
 
     def test_env_example_matches_documented_backend_model_settings(self):
         env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+        env_secrets_example = (REPO_ROOT / ".env.secrets.example").read_text(encoding="utf-8")
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 
         assert "MODEL_NAME=" in env_example
-        assert "OPENAI_API_KEY=" in env_example
-        assert "ANTHROPIC_API_KEY=" in env_example
+        assert "QUERIO_SECRETS_FILE=" in env_example
+        assert "OPENAI_API_KEY=" in env_secrets_example
+        assert "ANTHROPIC_API_KEY=" in env_secrets_example
         assert "MODEL_PROVIDER=" not in readme, (
             "README should document the actual env contract used by the backend, "
             "not a different provider switch that the app does not read."
