@@ -1,32 +1,40 @@
 # Software Requirements Document (SRD)
-## Querio — Natural Language Data Analyst Chatbot (POC)
+## Querio - Natural Language Data Analyst Chatbot (POC)
 ### *Talk to your data.*
 
-**Version:** 1.3
+**Version:** 1.4
 
 **Author:** Ahmed Jahin Akif
 
-**Status:** Draft — POC scope (core) + optional extension
+**Status:** In progress - core POC largely implemented, with selected extension work already landed
 
 **Purpose:** Personal portfolio project targeting Data Software Engineer role
 
-**Changelog (v1.1 → v1.2):** Re-scoped after a vibe-check pass. Querio is now explicitly an **agentic AI engineering showcase**, not a data-platform showcase. Agent framework locked to Pydantic AI. Added a real multi-provider model-switching architecture (Claude / OpenAI / local via Ollama). Dropped Airflow and Kubernetes from scope. Kept dbt in a reduced form. Locked the demo dataset.
+**Changelog (v1.1 -> v1.2):** Re-scoped after a vibe-check pass. Querio became explicitly an agentic AI engineering showcase, not a broad data-platform showcase. Agent framework locked to Pydantic AI. Multi-provider model switching was added. Airflow and Kubernetes were dropped from the core scope.
 
-**Changelog (v1.2 → v1.3):** Added Section 13 — an optional, clearly-separated "Data Platform Extension" covering Airflow, fuller dbt, and Kubernetes. This does **not** change the core POC's scope, success criteria, or non-goals (Sections 3.1, 9, 12 are unchanged) — it's a stretch phase to build only if/when it's worth the extra time for a specific application.
+**Changelog (v1.2 -> v1.3):** Added Section 13 as an optional extension covering Airflow, fuller dbt, and Kubernetes without changing the core POC scope.
+
+**Changelog (v1.3 -> v1.4):** Updated this SRD to match the current repo. Querio now has a working FastAPI + React + Postgres + dbt stack in Docker Compose, multi-provider switching, clarification handling, prompt guardrails, schema-aware SQL repair, dbt tests in the local pipeline, rebuild helper scripts, and a partial Airflow-based refresh extension.
 
 ---
 
 ## 1. Overview
 
-**Querio** is a proof-of-concept tool that lets a non-technical user ask a business question in plain English and receive an answer grounded in real structured data — including a visual chart when the question calls for one. The system translates natural language into safe, validated SQL, executes it against a relational database, and formats the result as both a written answer and, where appropriate, a chart.
+Querio lets a non-technical user ask a business question in plain English and receive an answer grounded in structured data. The system translates natural language into safe SQL, executes it against Postgres, and returns a natural-language answer plus a chart when appropriate.
 
-The core engineering story is the **agent layer**: intent interpretation, guardrail-validated SQL generation, ambiguity handling, and a provider-agnostic model-switching architecture (Claude, OpenAI, or a locally hosted model via Ollama). Supporting infrastructure is intentionally kept minimal so it doesn't dilute that story.
+The main engineering story is still the agent layer:
+- schema-aware SQL generation
+- guardrail validation
+- ambiguity handling
+- provider-agnostic model switching
+
+Supporting infra exists to make the agent story believable, testable, and runnable.
 
 ---
 
 ## 2. Problem Statement
 
-Business stakeholders and analysts often need quick answers from structured data but don't write SQL. Existing chatbot demos usually do RAG over documents, not real queries over live relational data — which is a materially different (and harder) problem: correctness, guardrails, and ambiguity handling matter far more than retrieval quality.
+Business users need quick answers from relational data but often do not write SQL. Most chatbot demos avoid this by doing document retrieval instead. Querio focuses on the harder problem: generating and safely executing SQL over a live relational schema without confidently fabricating nonsense.
 
 ---
 
@@ -35,114 +43,136 @@ Business stakeholders and analysts often need quick answers from structured data
 - Accept a natural language question about a dataset.
 - Generate and safely execute a read-only SQL query against Postgres.
 - Return a natural language answer.
-- When the question implies a trend, comparison, or distribution, generate an appropriate chart alongside the text answer.
-- Handle ambiguous questions by asking a clarifying follow-up rather than guessing.
-- Support switching the underlying LLM (Claude, OpenAI, or a local Ollama model) via config, without changing agent logic.
-- Be deployable in a container, with tests covering the guardrail and query-generation logic.
+- Generate a chart for trend/comparison-shaped questions when appropriate.
+- Handle ambiguous questions by asking clarifying follow-ups.
+- Support switching the underlying LLM through config without changing agent logic.
+- Be runnable in containers with tests covering core guardrail and query-generation behavior.
 
-## 3.1 Non-Goals (out of scope for POC)
+## 3.1 Non-Goals (core POC)
 
 - Write/mutate operations on the database.
 - Multi-turn conversational memory beyond a single clarification round-trip.
-- Authentication/authorization, multi-tenancy, or role-based data access.
-- Orchestration tooling (Airflow, or any scheduler) — data is loaded via a one-off seed/transform script, not a scheduled pipeline.
-- Kubernetes or any cluster deployment — Docker Compose is the full extent of deployment scope.
-- User-facing model selection UI — model choice is an env/config setting for this POC, not a chat-UI dropdown.
-- Full BI-tool-style dashboarding beyond single-query charts.
+- Authentication, authorization, multi-tenancy, or role-based access controls.
+- Kubernetes as part of the core story.
+- User-facing provider selection UI.
+- Full BI-tool-style dashboarding.
+- Arbitrary user-uploaded datasets.
+
+## 3.2 Implementation Snapshot (July 2026)
+
+Implemented now:
+- FastAPI `/api/ask` endpoint with answer and clarification response types
+- React chat UI with chart rendering
+- Pydantic AI SQL generator
+- Provider switching across OpenAI, Anthropic, and Ollama
+- Schema introspection via `information_schema`
+- SQL guardrails for `SELECT`-only behavior plus row-limit injection
+- Clarification round-trip support with a conversation store
+- Read-only Postgres execution with timeout and schema-aware `search_path`
+- One bounded SQL repair retry for retriable schema errors
+- Deterministic synthetic raw-data generation
+- dbt marts models plus `dbt test` in the local pipeline
+- Structured request logging
+- Helper scripts for `up`, `down`, `reset`, `rebuild`, `logs`, and `ps`
+
+Partially implemented / still being hardened:
+- Strict separation into a dedicated read-only DB role
+- Cross-provider proof/demo flow as a polished artifact
+- Airflow as a clearly secondary extension
+- Coverage/CI/demo collateral as polished portfolio output
+
+Not implemented:
+- Kubernetes deployment
+- Arbitrary dataset onboarding
+- User-facing model selector
 
 ---
 
 ## 4. User & Use Case
 
-**Primary user:** A non-technical business stakeholder (analyst, PM) who wants to explore a dataset without writing SQL.
+**Primary user:** a non-technical business stakeholder who wants answers without writing SQL.
 
-**Dataset:** [Olist Brazilian E-Commerce dataset](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce) (~100k orders, multi-table: orders, order_items, products, customers, sellers, payments, reviews). Chosen because it sits inside the target 100k–1M row range, has real relational structure (forces genuine joins rather than trivial single-table SQL), and is distinctive enough to avoid looking like a copy-paste Northwind/Superstore demo.
+**Dataset:** Olist Brazilian E-Commerce data shape. The local stack currently uses deterministic synthetic Olist-shaped data as the default demo dataset.
 
-**Example interactions:**
-- "What were the top 5 products by revenue last quarter?" → text answer + bar chart
-- "How has monthly signups trended this year?" → text answer + line chart
-- "Show me customers" → clarifying question ("Which attribute — count, list, by region?")
+**Representative interactions:**
+- "How many orders do we have?"
+- "Show total revenue by month."
+- "Show me customers."
+- "Delete all orders." -> blocked
 
 ---
 
 ## 5. High-Level Architecture
 
-```
-┌─────────────┐      ┌──────────────┐      ┌────────────────────┐
-│   React     │─────▶│   FastAPI     │─────▶│  Agent Layer         │
-│  Frontend   │◀─────│   Backend     │◀─────│  (Pydantic AI)       │
-│ (chat + chart)      │  (REST API)  │      └─────────┬───────────┘
-└─────────────┘      └──────────────┘                │
-                                            ┌───────────▼───────────┐
-                                            │  Model Provider        │
-                                            │  Abstraction Layer     │
-                                            │  (Claude / OpenAI /    │
-                                            │   Ollama, env-config)  │
-                                            └───────────┬───────────┘
-                                                        │
-                                            ┌───────────▼───────────┐
-                                            │  SQL Generation +      │
-                                            │  Guardrail Validator   │
-                                            └───────────┬───────────┘
-                                                        │
-                                            ┌───────────▼───────────┐
-                                            │  Postgres (read-only   │
-                                            │  role) + dbt models    │
-                                            │  (2 models, one-time   │
-                                            │  seed/transform)       │
-                                            └────────────────────────┘
+Frontend (React) -> Backend API (FastAPI) -> Agent layer (Pydantic AI) -> Guardrails + Query execution -> Postgres marts
 
-  Docker Compose: containerized deployment of API + DB for local dev/demo
-```
+Supporting components:
+- raw synthetic data loader
+- dbt transformations from `raw` to `marts`
+- Docker Compose local stack
+- optional Airflow refresh flow
 
 ---
 
 ## 6. Functional Requirements
 
-### FR1 — Question Intake
+### FR1 - Question Intake
 System accepts a free-text question via the React chat UI and sends it to the backend API.
+Status: Implemented.
 
-### FR2 — Intent & Query Planning
-Agent layer (Pydantic AI) interprets the question, determines required tables/columns using a schema description tool, and drafts a SQL query via function calling.
+### FR2 - Intent & Query Planning
+Agent interprets the question, inspects schema context, and drafts SQL through structured output.
+Status: Implemented.
 
-### FR3 — Guardrail Validation
-Before execution, generated SQL is validated:
-- Must be `SELECT`-only (reject any DDL/DML)
-- Must run under a read-only DB role
-- Row limit enforced (e.g. max 500 rows)
-- Query timeout enforced
+### FR3 - Guardrail Validation
+Generated SQL must be validated before execution.
+Current runtime guardrails include:
+- `SELECT`-only validation
+- row-limit injection
+- read-only transaction behavior
+- timeout enforcement
+- prompt-level schema grounding rules
+- one schema-aware repair pass for retriable SQL mistakes
+Status: Implemented and still being hardened.
 
-### FR4 — Execution & Result Shaping
-Validated query executes against Postgres. Results are passed back to the agent to compose a natural language answer.
+### FR4 - Execution & Result Shaping
+Validated query executes against Postgres and results are turned into a natural-language answer.
+Status: Implemented.
 
-### FR5 — Chart Decision & Generation
-Agent classifies whether the result shape warrants a visualization (e.g. time series → line chart, categorical comparison → bar chart, distribution → histogram, single value → no chart). If so, it returns a structured chart spec (type, x/y fields, data) alongside the text answer.
+### FR5 - Chart Decision & Generation
+System returns a chart spec for supported trend/comparison result shapes.
+Status: Implemented for the current line/bar chart flow.
 
-### FR6 — Chart Rendering (React)
-Frontend renders the chart spec using Recharts, alongside the assistant's text answer in the chat thread.
+### FR6 - Chart Rendering
+Frontend renders the chart spec in the chat thread.
+Status: Implemented.
 
-### FR7 — Ambiguity Handling
-If the question lacks enough detail to generate a confident query, the agent returns a clarifying question instead of guessing, and the frontend renders it as a normal chat turn awaiting the user's reply.
+### FR7 - Ambiguity Handling
+If the question is vague or unsupported by the schema, the system asks a clarifying question instead of guessing.
+Status: Implemented for a single clarification round-trip.
 
-### FR8 — Model Provider Switching
-The agent's underlying LLM is selected via a config/env variable at startup, supporting at minimum: Anthropic Claude API, OpenAI API, and a locally hosted model via Ollama. Swapping providers requires no changes to agent logic — only the provider adapter differs. Not user-facing in this POC (see Non-Goals).
+### FR8 - Model Provider Switching
+Underlying model is selected via config/env variable.
+Status: Implemented.
 
-### FR9 — Data Seeding & Transformation
-A one-off script loads the Olist dataset into Postgres and runs a small dbt project (2 models: an order-level fact model and a product or customer dimension model) to produce the tables the agent queries against. This is a manual/one-time run for the POC, not a scheduled pipeline.
+### FR9 - Data Seeding & Transformation
+Local stack seeds data and builds dbt marts before the backend serves queries.
+Implementation note: the main happy path currently uses synthetic Olist-shaped data loaded into `raw`, then transformed into `marts`, followed by `dbt test`.
+Status: Implemented.
 
 ---
 
 ## 7. Non-Functional Requirements
 
-| Category | Requirement |
-|---|---|
-| Security | DB access via read-only role; no raw query string ever executed without passing validator; secrets via env vars, never hardcoded |
-| Testing | TDD with pytest; unit tests for SQL validator, agent tool functions, provider adapter interface, and API endpoints; target meaningful coverage on guardrail logic specifically |
-| Reliability | Query timeout + row cap prevent runaway queries; errors surfaced as friendly chat messages, not raw stack traces |
-| Observability | Structured logging of each agent call (question → provider used → generated SQL → validation result → execution time); optional lightweight tracing |
-| Deployability | Fully containerized via Docker Compose for local dev and demo. No Kubernetes in this POC. |
-| Performance | POC target: end-to-end response under ~5s for typical queries against a dataset in the 100k–1M row range, when using a hosted provider (Claude/OpenAI). Local Ollama models are expected to be slower and are not held to this target. |
-| Portability | Agent logic must be provider-agnostic: no Claude- or OpenAI-specific assumptions baked into prompts or parsing where avoidable. |
+| Category | Requirement | Current State |
+|---|---|---|
+| Security | No unsafe raw SQL should be executed | Implemented through validator + read-only transaction behavior |
+| Testing | Pytest coverage on guardrails and core query path | Implemented, still growing |
+| Reliability | Friendly failures instead of stack traces in the UI | Implemented |
+| Observability | Structured logs across the request path | Implemented |
+| Deployability | Fully containerized for local demo | Implemented |
+| Performance | Reasonable local demo latency | In progress / model-dependent |
+| Portability | Provider-agnostic agent logic | Implemented |
 
 ---
 
@@ -150,92 +180,100 @@ A one-off script loads the Olist dataset into Postgres and runs a small dbt proj
 
 | Layer | Choice |
 |---|---|
-| Frontend | React + TypeScript, Recharts for charts |
+| Frontend | React + TypeScript + Recharts |
 | Backend API | FastAPI |
-| Agent framework | Pydantic AI (function calling, structured output) |
+| Agent framework | Pydantic AI |
 | Database | PostgreSQL |
-| Transformation | dbt (2 models — order fact + one dimension) |
-| LLM Providers | Anthropic Claude API, OpenAI API, local model via Ollama — switchable via env config |
-| Testing | pytest, TDD |
-| Deployment | Docker Compose (local dev + demo only) |
+| Transformation | dbt |
+| LLM providers | OpenAI, Anthropic, Ollama |
+| Testing | pytest |
+| Deployment | Docker Compose |
 
 ---
 
 ## 9. Success Criteria for POC
 
-- End-to-end demo: ask a question in the React UI → get correct text answer → get correct chart when applicable.
-- At least 3 distinct question types handled correctly (aggregation, trend, comparison).
-- At least one ambiguous question correctly triggers a clarification instead of a wrong answer.
-- SQL guardrail provably blocks a malicious/destructive query attempt (demonstrable test case).
-- Same question, run against at least two different providers (e.g. Claude and Ollama), demonstrably produces correct SQL from both — proving the abstraction actually works, not just that it exists in code.
-- Test suite passes in CI; coverage report available.
-- Runs via `docker compose up` locally.
+- End-to-end demo in the browser
+- At least aggregation, trend, and comparison flows work
+- At least one ambiguous question triggers clarification
+- Destructive query attempts are blocked
+- Provider switching works without changing agent logic
+- Local stack runs through Docker Compose
+
+### 9.1 Current Status Against Success Criteria
+
+- End-to-end local stack: implemented
+- Aggregation / trend / comparison flows: implemented in the current demo path
+- Ambiguous question -> clarification flow: implemented
+- Destructive query blocking: implemented and tested
+- Multi-provider architecture: implemented, though provider quality varies by model
+- Docker Compose local run: implemented
+- CI / coverage artifacting / polished demo collateral: still in progress
 
 ---
 
-## 10. Phased Build Plan
+## 10. Phased Build Plan Status
 
-**Phase 1 — Core agent loop (highest priority)**
-Pydantic AI agent + SQL generation + guardrails + FastAPI + Postgres, tested with pytest, no UI polish. Single provider (Claude) to start.
+### Phase 1 - Core agent loop
+Status: Implemented.
 
-**Phase 2 — Model provider abstraction**
-Add the provider adapter interface; wire up OpenAI and Ollama; add tests proving the same question produces valid SQL across providers.
+### Phase 2 - Model provider abstraction
+Status: Implemented at the app-config level; continued hardening is ongoing.
 
-**Phase 3 — Frontend + charts**
-React chat UI, Recharts integration, chart-spec contract between agent and frontend.
+### Phase 3 - Frontend + charts
+Status: Implemented for the main POC flow.
 
-**Phase 4 — Data & dbt**
-Seed script for the Olist dataset, 2 dbt models.
+### Phase 4 - Data + dbt
+Status: Implemented with synthetic raw data, marts models, and dbt tests.
 
-**Phase 5 — Observability & polish**
-Logging/tracing, README with architecture diagram and demo GIF, coverage badge.
+### Phase 5 - Observability + polish
+Status: Partially implemented. Logging and README are strong; tracing, artifacts, and portfolio polish are still uneven.
 
 ---
 
 ## 11. Risks & Assumptions
 
-- **Risk:** LLM-generated SQL may hallucinate columns/tables. **Mitigation:** provide schema as a tool/context, validate against actual information_schema before execution.
-- **Risk:** Chart-type selection could be wrong for edge cases. **Mitigation:** conservative default (no chart) when uncertain, rather than a misleading chart.
-- **Risk:** Local models via Ollama are meaningfully weaker at structured output / function calling than Claude or GPT-class hosted models. Guardrail-validated SQL generation may work noticeably worse on a local model. **Mitigation:** document this as a known, honest limitation in the README rather than hiding it — it's a legitimate finding, not a bug — and don't hold local-model performance to the same success-criteria bar as hosted providers.
-- **Assumption:** The Olist Brazilian E-Commerce dataset (public, ~100k orders, multi-table) is sufficient to demonstrate the pattern; no proprietary data needed.
+- **Risk:** LLM-generated SQL hallucinates columns or tables.
+  Mitigation: schema tool, stronger prompt guardrails, validator, schema-aware execution, bounded repair retry.
+- **Risk:** Local Ollama models perform worse than hosted providers.
+  Mitigation: document this honestly and keep provider switching as an architecture proof, not a promise of equal quality.
+- **Risk:** Current marts layer does not expose every business grain a demo user might ask for.
+  Mitigation: prefer clarification over guessing and keep the demo question set aligned with the current schema.
+- **Assumption:** Deterministic synthetic Olist-shaped data is acceptable for the default local demo path.
 
 ---
 
-## 12. Out of Scope (explicit — for the core POC)
+## 12. Out of Scope for the Core POC
 
-- User authentication
-- Multi-tenant data isolation
-- Scheduled/orchestrated data pipelines (Airflow or otherwise)
-- Kubernetes or any cluster deployment
-- User-facing model selection UI
-- Full BI-tool-style dashboarding beyond single-query charts
-
-*(Note: the two items above marked "explicit" are picked back up, deliberately, in Section 13 — but only as an optional stretch phase, not as core requirements.)*
+- Authentication
+- Multi-tenant isolation
+- Kubernetes as part of the core deployment story
+- Arbitrary dataset ingestion
+- User-facing provider selection UI
+- Full dashboarding
 
 ---
 
-## 13. Optional Extension — Data Platform (Stretch, Phase 6)
+## 13. Optional Extension - Data Platform
 
-**Status: not required for POC completion.** Build this only if there's a specific reason to — e.g. an application to a role weighted more toward data infrastructure, or spare time after Phases 1–5 are solid. This section exists so the decision to add platform work later is deliberate, not scope creep.
-
-If built, this extension restores and expands the infra that was trimmed out of the core scope, without touching the agent-engineering story:
+This remains a secondary story. It should not overshadow the core agent-engineering narrative.
 
 ### 13.1 Airflow
-- A real scheduled DAG (not just a doc mention) that re-runs the ingest + dbt transform on a cadence, simulating new orders arriving into the Olist dataset over time (e.g. a synthetic daily batch).
-- Single DAG is enough — this is about proving orchestration competence, not building a pipeline suite.
+Goal: scheduled refresh of the underlying demo data and dbt models.
+Current status: partially implemented in the local extension flow.
 
-### 13.2 dbt — grown beyond the 2-model core
-- Expand from the core's single fact + dimension model into a proper staging → marts layering.
-- Add `dbt test` coverage (not_null, relationships, accepted_values) for a real data-quality story — this is a good place to show rigor without much extra time cost.
+### 13.2 dbt growth beyond the minimal marts layer
+Goal: expand into a fuller staging -> marts structure with richer tests.
+Current status: still a small marts layer, but dbt test coverage has already been added.
 
 ### 13.3 Kubernetes
-- Deployment + Service manifests for the API and Postgres, deployed locally via minikube/kind.
-- Explicitly scoped as "demonstrates cluster-deployment familiarity," not production-hardened — no autoscaling, ingress, or secrets-manager integration (consistent with the original v1.1 framing).
+Goal: local cluster deployment to demonstrate cluster familiarity.
+Current status: not implemented.
 
-### 13.4 Success criteria for this extension (separate from Section 9)
-- DAG run is demonstrable end-to-end (trigger → ingest → dbt run → updated tables) with logs to show for it.
-- `dbt test` passes and is visible in CI or a demo screenshot.
-- `kubectl apply` brings up API + DB locally against the manifests; a query through the running k8s pods works end-to-end.
+### 13.4 Extension Success Criteria
+- refresh flow is demonstrable end to end
+- dbt tests pass as part of the extension story
+- Kubernetes path works locally if ever built
 
-### 13.5 Risk if built
-- **Risk:** Re-introduces the original two-story dilution problem if presented as equally weighted to the agent work. **Mitigation:** always frame this section as "extension" in the README and any resume bullet — lead with the agent story, mention the platform extension as a secondary, clearly-labeled addition.
+### 13.5 Presentation Risk
+If this extension is presented as equal to the agent story, the portfolio narrative gets diluted. Lead with the agent work; mention platform work as a clearly labeled extension.
