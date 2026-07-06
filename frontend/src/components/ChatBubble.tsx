@@ -1,17 +1,31 @@
-import type { AskResponse, AnswerResponse, ClarifyingQuestionResponse } from '../types/api'
+import type { ChatMessage, AnswerResponse, ClarifyingQuestionResponse, UserMessage } from '../types/api'
 import { ChartWidget } from './charts/ChartWidget'
 
 interface ChatBubbleProps {
-  message: AskResponse
+  message: ChatMessage
   onOptionSelect?: (option: string) => void
   disabled?: boolean
 }
 
 export function ChatBubble({ message, onOptionSelect, disabled }: ChatBubbleProps) {
+  if (message.type === 'user') {
+    return <UserBubble message={message} />
+  }
+
   if (message.type === 'clarifying_question') {
     return <ClarifierBubble message={message} onOptionSelect={onOptionSelect} disabled={disabled} />
   }
   return <AnswerBubble message={message} />
+}
+
+function UserBubble({ message }: { message: UserMessage }) {
+  return (
+    <div data-testid="user-bubble" className="bubble user-bubble">
+      <div className="bubble-content">
+        <p>{message.question}</p>
+      </div>
+    </div>
+  )
 }
 
 function AnswerBubble({ message }: { message: AnswerResponse }) {

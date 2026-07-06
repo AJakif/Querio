@@ -1,16 +1,17 @@
 import { useState, useCallback } from 'react'
 import { ChatThread } from './components/ChatThread'
 import { askQuestion } from './api/askApi'
-import type { AskResponse } from './types/api'
+import type { ChatMessage } from './types/api'
 
 export default function App() {
-  const [messages, setMessages] = useState<AskResponse[]>([])
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | undefined>()
 
   const handleSend = useCallback(async (question: string) => {
     setLoading(true)
     setError(undefined)
+    setMessages((prev) => [...prev, { type: 'user', question }])
     try {
       const response = await askQuestion(question)
       setMessages((prev) => [...prev, response])
@@ -24,6 +25,7 @@ export default function App() {
   const handleClarify = useCallback(async (conversationId: string, option: string) => {
     setLoading(true)
     setError(undefined)
+    setMessages((prev) => [...prev, { type: 'user', question: option }])
     try {
       const response = await askQuestion(option, conversationId, option)
       setMessages((prev) => [...prev, response])

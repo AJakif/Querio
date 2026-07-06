@@ -278,7 +278,10 @@ Querio's LLM is chosen entirely via config — no code changes needed to switch:
 APP_ENV=dev
 DATABASE_URL=postgresql://querio:querio@localhost:5432/querio
 DB_SCHEMA=marts
+MODEL_PROVIDER=openai
 MODEL_NAME=openai:gpt-4o-mini
+OLLAMA_MODEL=llama3.1
+OLLAMA_BASE_URL=http://localhost:11434/v1
 LOG_LEVEL=
 QUERIO_SECRETS_FILE=.env.secrets
 ```
@@ -291,8 +294,9 @@ ANTHROPIC_API_KEY=
 
 Examples:
 
-- `MODEL_NAME=openai:gpt-4o-mini` with `OPENAI_API_KEY=...`
-- `MODEL_NAME=anthropic:claude-3-5-sonnet-latest` with `ANTHROPIC_API_KEY=...`
+- `MODEL_PROVIDER=openai` and `MODEL_NAME=gpt-4o-mini` with `OPENAI_API_KEY=...`
+- `MODEL_PROVIDER=claude` and `MODEL_NAME=claude-3-5-sonnet-latest` with `ANTHROPIC_API_KEY=...`
+- `MODEL_PROVIDER=ollama` and `OLLAMA_MODEL=llama3.1` with Ollama running at `OLLAMA_BASE_URL`
 
 The backend loads secrets in this order:
 
@@ -302,7 +306,7 @@ The backend loads secrets in this order:
 
 The default Docker setup mounts `./.env.secrets` read-only into the container and reads `/run/secrets/querio.env`, so provider keys do not need to appear in `docker-compose.yml` or your main `.env`.
 
-If both API keys are blank, Querio falls back to its built-in fake SQL generator so the local stack can still boot for wiring checks, but real natural-language SQL generation requires a valid provider API key.
+If hosted provider API keys are blank, Querio falls back to its built-in fake SQL generator so the local stack can still boot for wiring checks. Real natural-language SQL generation requires a valid hosted provider API key or a reachable local Ollama server.
 
 ### Logging
 

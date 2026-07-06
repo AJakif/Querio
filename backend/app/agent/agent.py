@@ -29,7 +29,12 @@ class SqlGenerator(ABC):
         ...
 
 
-def _build_model(model_name: str, openai_api_key: str | None, anthropic_api_key: str | None):
+def _build_model(
+    model_name: str,
+    openai_api_key: str | None,
+    anthropic_api_key: str | None,
+    ollama_base_url: str | None = None,
+):
     provider_name, separator, provider_model = model_name.partition(":")
     if not separator:
         logger.debug("Using raw model name without provider adapter", extra={"model_name": model_name})
@@ -40,6 +45,16 @@ def _build_model(model_name: str, openai_api_key: str | None, anthropic_api_key:
         return OpenAIChatModel(
             provider_model,
             provider=OpenAIProvider(api_key=openai_api_key),
+        )
+
+    if provider_name == "ollama":
+        logger.debug(
+            "Building Ollama model adapter",
+            extra={"model_name": provider_model, "base_url": ollama_base_url},
+        )
+        return OpenAIChatModel(
+            provider_model,
+            provider=OpenAIProvider(base_url=ollama_base_url, api_key="ollama"),
         )
 
     if provider_name == "anthropic" and anthropic_api_key:
@@ -63,10 +78,11 @@ class PydanticAiSqlGenerator(SqlGenerator):
         schema_repo: SchemaRepository,
         openai_api_key: str | None = None,
         anthropic_api_key: str | None = None,
+        ollama_base_url: str | None = None,
     ):
         logger.info("Initializing Pydantic AI SQL generator", extra={"model_name": model_name})
         self._agent = PydanticAgent(
-            _build_model(model_name, openai_api_key, anthropic_api_key),
+            _build_model(model_name, openai_api_key, anthropic_api_key, ollama_base_url),
             system_prompt=SYSTEM_PROMPT,
             output_type=GeneratedSQL,
             deps_type=SchemaRepository,

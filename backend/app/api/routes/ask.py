@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+import uuid
 
 from app.core.logging import get_logger
 from app.schemas.ask import AskRequest, AnswerResponse, ClarifyingQuestionResponse, ChartSpecResponse, SqlQueryResponse
@@ -19,24 +20,29 @@ async def ask(
     body: AskRequest,
     service: AskService = Depends(get_ask_service),
 ) -> AnswerResponse | ClarifyingQuestionResponse:
+    request_id = str(uuid.uuid4())
     logger.info(
         "Received /ask request",
         extra={
+            "request_id": request_id,
             "conversation_id": body.conversation_id,
             "has_clarification_answer": body.clarification_answer is not None,
             "question_length": len(body.question),
+            "question": body.question,
         },
     )
     result = await service.answer(
         question=body.question,
         conversation_id=body.conversation_id,
         clarification_answer=body.clarification_answer,
+        request_id=request_id,
     )
 
     if isinstance(result, ClarifyingQuestion):
         logger.info(
             "Returning clarification response",
             extra={
+                "request_id": request_id,
                 "conversation_id": result.conversation_id,
                 "options_count": len(result.options),
             },
@@ -67,6 +73,7 @@ async def ask(
     logger.info(
         "Returning answer response",
         extra={
+            "request_id": request_id,
             "conversation_id": result.conversation_id,
             "has_sql": result.sql is not None,
             "has_chart": result.chart is not None,

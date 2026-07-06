@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
-import type { AskResponse } from '../types/api'
+import type { ChatMessage } from '../types/api'
 import { ChatBubble } from './ChatBubble'
 
 interface ChatThreadProps {
-  messages: AskResponse[]
+  messages: ChatMessage[]
   onSend: (question: string) => void
   onClarify?: (conversationId: string, option: string) => void
   loading?: boolean
@@ -12,7 +12,12 @@ interface ChatThreadProps {
 
 export function ChatThread({ messages, onSend, onClarify, loading, error }: ChatThreadProps) {
   const [input, setInput] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -49,6 +54,7 @@ export function ChatThread({ messages, onSend, onClarify, loading, error }: Chat
       </div>
       <form className="input-area" onSubmit={handleSubmit}>
         <input
+          ref={inputRef}
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -63,7 +69,7 @@ export function ChatThread({ messages, onSend, onClarify, loading, error }: Chat
   )
 }
 
-function findLastClarifierIndex(messages: AskResponse[]): number {
+function findLastClarifierIndex(messages: ChatMessage[]): number {
   let last = -1
   for (let i = 0; i < messages.length; i++) {
     if (messages[i]?.type === 'clarifying_question') {

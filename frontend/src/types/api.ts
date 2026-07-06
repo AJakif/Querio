@@ -33,3 +33,10 @@ export interface ClarifyingQuestionResponse {
 }
 
 export type AskResponse = AnswerResponse | ClarifyingQuestionResponse
+
+export interface UserMessage {
+  type: 'user'
+  question: string
+}
+
+export type ChatMessage = AskResponse | UserMessage

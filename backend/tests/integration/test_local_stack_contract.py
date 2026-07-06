@@ -96,13 +96,11 @@ class TestReviewerDocsContract:
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 
         assert "MODEL_NAME=" in env_example
+        assert "MODEL_PROVIDER=" in env_example
         assert "QUERIO_SECRETS_FILE=" in env_example
         assert "OPENAI_API_KEY=" in env_secrets_example
         assert "ANTHROPIC_API_KEY=" in env_secrets_example
-        assert "MODEL_PROVIDER=" not in readme, (
-            "README should document the actual env contract used by the backend, "
-            "not a different provider switch that the app does not read."
-        )
+        assert "MODEL_PROVIDER=" in readme
 
     def test_readme_documents_airflow_refresh_flow(self):
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")

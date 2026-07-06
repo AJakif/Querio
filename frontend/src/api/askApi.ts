@@ -2,7 +2,7 @@
 import { getMockResponse } from '../test/mockData'
 
 const BASE_URL = '/api/ask'
-const USE_MOCK = import.meta.env.VITE_MOCK === 'true'
+const USE_MOCK = import.meta.env.VITE_MOCK === 'true' || import.meta.env.MODE === 'test'
 
 export async function askQuestion(
   question: string,

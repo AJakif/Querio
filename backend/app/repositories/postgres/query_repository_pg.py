@@ -2,6 +2,7 @@ import asyncio
 from psycopg2.extras import RealDictCursor
 
 from app.core.logging import get_logger
+from app.core.config import settings
 from app.repositories.base import QueryRepository
 
 logger = get_logger("repositories.postgres.query")
@@ -22,6 +23,8 @@ class PostgresQueryRepository(QueryRepository):
             logger.debug("Opening Postgres connection for query execution")
             with self._get_conn() as conn:
                 with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                    cur.execute("SET TRANSACTION READ ONLY")
+                    cur.execute("SET LOCAL statement_timeout = %s", (settings.query_timeout_ms,))
                     logger.debug("Executing Postgres query", extra={"sql": sql})
                     cur.execute(sql)
                     rows = [dict(row) for row in cur.fetchall()]

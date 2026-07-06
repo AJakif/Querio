@@ -58,7 +58,10 @@ class Settings(BaseSettings):
     app_env: str = "dev"
     database_url: str = "postgresql://querio:querio@localhost:5432/querio"
     database_url_file: str | None = None
+    model_provider: str | None = None
     model_name: str = "openai:gpt-4o-mini"
+    ollama_model: str = "llama3.1"
+    ollama_base_url: str = "http://localhost:11434/v1"
     openai_api_key: SecretStr | None = Field(default=None, repr=False)
     openai_api_key_file: str | None = None
     anthropic_api_key: SecretStr | None = Field(default=None, repr=False)
@@ -66,6 +69,7 @@ class Settings(BaseSettings):
     querio_secrets_file: str = str(PROJECT_ROOT / ".env.secrets")
     log_level: str | None = None
     max_rows: int = 1000
+    query_timeout_ms: int = 5000
     db_schema: str = "marts"
 
     model_config = SettingsConfigDict(
@@ -91,10 +95,38 @@ class Settings(BaseSettings):
     @property
     def effective_log_level(self) -> str:
         if self.log_level and self.log_level.strip():
+            if self.normalized_app_env == "prod" and self.log_level.strip().upper() == "DEBUG":
+                return "INFO"
             return self.log_level.strip().upper()
         if self.normalized_app_env == "prod":
             return "INFO"
         return "DEBUG"
+
+    @property
+    def effective_model_provider(self) -> str:
+        if self.model_provider and self.model_provider.strip():
+            return self.model_provider.strip().lower()
+
+        provider, separator, _ = self.model_name.partition(":")
+        if separator:
+            if provider == "anthropic":
+                return "claude"
+            return provider.lower()
+        return "openai"
+
+    @property
+    def effective_model_name(self) -> str:
+        provider = self.effective_model_provider
+        if provider == "ollama":
+            return f"ollama:{self.ollama_model}"
+
+        if self.model_provider and self.model_provider.strip():
+            provider_prefix = "anthropic" if provider == "claude" else provider
+            _, separator, raw_model = self.model_name.partition(":")
+            model = raw_model if separator else self.model_name
+            return f"{provider_prefix}:{model}"
+
+        return self.model_name
 
 
 def _apply_secret_overrides(base_settings: Settings) -> Settings:

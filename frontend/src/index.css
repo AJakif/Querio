@@ -13,6 +13,7 @@
   --color-text-secondary: #6b7280;
   --color-border: #e5e7eb;
   --color-answer-bg: #e8f4fd;
+  --color-user-bg: #eef2ff;
   --color-clarifier-bg: #fef3c7;
   --color-clarifier-border: #f59e0b;
   --color-error: #ef4444;
@@ -87,6 +88,12 @@ body {
   align-self: flex-start;
   background: var(--color-answer-bg);
   border: 1px solid #b3d8f0;
+}
+
+.user-bubble {
+  align-self: flex-end;
+  background: var(--color-user-bg);
+  border: 1px solid #c7d2fe;
 }
 
 .clarifier-bubble {

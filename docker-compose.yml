@@ -83,7 +83,10 @@ services:
     environment:
       DATABASE_URL: postgresql://querio:querio@postgres:5432/querio
       DB_SCHEMA: marts
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-openai}
       MODEL_NAME: ${MODEL_NAME:-openai:gpt-4o-mini}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
       QUERIO_SECRETS_FILE: /run/secrets/querio.env
     volumes:
       - ./.env.secrets:/run/secrets/querio.env:ro

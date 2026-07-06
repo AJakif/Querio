@@ -38,13 +38,20 @@ def _build_repos() -> tuple[SchemaRepository, QueryRepository]:
 
 
 def _build_sql_generator(schema_repo: SchemaRepository) -> SqlGenerator:
-    if settings.has_llm_api_key:
-        logger.info("Using provider-backed SQL generator", extra={"model_name": settings.model_name})
+    if settings.effective_model_provider == "ollama" or settings.has_llm_api_key:
+        logger.info(
+            "Using provider-backed SQL generator",
+            extra={
+                "model_provider": settings.effective_model_provider,
+                "model_name": settings.effective_model_name,
+            },
+        )
         return PydanticAiSqlGenerator(
-            settings.model_name,
+            settings.effective_model_name,
             schema_repo,
             openai_api_key=settings.openai_api_key.get_secret_value() if settings.openai_api_key else None,
             anthropic_api_key=settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None,
+            ollama_base_url=settings.ollama_base_url,
         )
     logger.warning("No LLM API keys configured, using fake SQL generator")
     return FakeSqlGenerator()
@@ -60,6 +67,7 @@ async def lifespan(app: FastAPI):
             "app_env": settings.normalized_app_env,
             "db_schema": settings.db_schema,
             "llm_enabled": settings.has_llm_api_key,
+            "model_provider": settings.effective_model_provider,
         },
     )
     schema_repo, query_repo = _build_repos()
