@@ -1,8 +1,12 @@
 from pydantic import BaseModel, Field
 from typing import Any
 
-
 import uuid as _uuid
+
+from app.core.logging import get_logger
+
+
+logger = get_logger("schemas.ask")
 
 
 class AskRequest(BaseModel):

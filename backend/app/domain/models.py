@@ -2,6 +2,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from app.core.logging import get_logger
+
+
+logger = get_logger("domain.models")
+
 
 class ChartType(str, Enum):
     bar = "bar"

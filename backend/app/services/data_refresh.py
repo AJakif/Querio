@@ -5,6 +5,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.core.logging import get_logger
+
+
+logger = get_logger("services.data_refresh")
+
 
 @dataclass(frozen=True)
 class RefreshStep:
@@ -36,10 +41,19 @@ class DataRefreshPipeline:
 
     def run(self) -> None:
         for step in self._build_steps():
+            logger.info(
+                "Running data refresh step",
+                extra={"step_name": step.name, "cwd": str(step.cwd), "command": list(step.command)},
+            )
             try:
                 self._command_runner(step.command, step.cwd)
             except Exception as exc:  # pragma: no cover - exercised via tests with fake runner
+                logger.exception(
+                    "Data refresh step failed",
+                    extra={"step_name": step.name, "cwd": str(step.cwd), "command": list(step.command)},
+                )
                 raise DataRefreshCommandError(step.name, step.command, exc) from exc
+            logger.info("Completed data refresh step", extra={"step_name": step.name})
 
     def _build_steps(self) -> list[RefreshStep]:
         return [
@@ -57,4 +71,5 @@ class DataRefreshPipeline:
 
     @staticmethod
     def _run_command(command: tuple[str, ...], cwd: Path) -> None:
+        logger.debug("Executing subprocess command", extra={"cwd": str(cwd), "command": list(command)})
         subprocess.run(command, cwd=cwd, check=True)

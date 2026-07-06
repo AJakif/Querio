@@ -1,6 +1,11 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from app.core.logging import get_logger
+
+
+logger = get_logger("repositories.base")
+
 
 @dataclass
 class ColumnInfo:

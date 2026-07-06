@@ -1,4 +1,8 @@
 from app.repositories.base import SchemaRepository, ColumnInfo, RelationshipInfo
+from app.core.logging import get_logger
+
+
+logger = get_logger("repositories.memory.schema")
 
 
 class InMemorySchemaRepository(SchemaRepository):
@@ -75,15 +79,20 @@ class InMemorySchemaRepository(SchemaRepository):
                 ColumnInfo("product_category_name_english", "character varying", True),
             ],
         }
+        logger.info("Initialized in-memory schema repository", extra={"table_count": len(self._tables)})
 
     async def get_tables(self) -> list[str]:
-        return list(self._tables.keys())
+        tables = list(self._tables.keys())
+        logger.debug("Loaded in-memory tables", extra={"table_count": len(tables)})
+        return tables
 
     async def get_columns(self, table: str) -> list[ColumnInfo]:
-        return self._tables.get(table, [])
+        columns = self._tables.get(table, [])
+        logger.debug("Loaded in-memory columns", extra={"table": table, "column_count": len(columns)})
+        return columns
 
     async def get_relationships(self) -> list[RelationshipInfo]:
-        return [
+        relationships = [
             RelationshipInfo(
                 source_table="orders", source_column="customer_id",
                 target_table="customers", target_column="customer_id",
@@ -109,3 +118,5 @@ class InMemorySchemaRepository(SchemaRepository):
                 target_table="orders", target_column="order_id",
             ),
         ]
+        logger.debug("Loaded in-memory relationships", extra={"relationship_count": len(relationships)})
+        return relationships

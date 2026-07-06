@@ -3,6 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from app.core.logging import get_logger
+
+
+logger = get_logger("orchestration.scheduled_data_refresh_dag")
+
 
 @dataclass(frozen=True)
 class BashTaskSpec:
@@ -20,11 +25,15 @@ class DagSpec:
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    root = Path(__file__).resolve().parents[3]
+    logger.debug("Resolved repository root", extra={"repo_root": str(root)})
+    return root
 
 
 def _backend_dir() -> Path:
-    return _repo_root() / "backend"
+    backend_dir = _repo_root() / "backend"
+    logger.debug("Resolved backend directory", extra={"backend_dir": str(backend_dir)})
+    return backend_dir
 
 
 dag = DagSpec(
