@@ -8,7 +8,7 @@ from app.schemas.upload import (
     UploadConfirmResponse,
     ColumnPreview,
 )
-from app.services.csv_ingestion import parse_csv
+from app.services.csv_ingestion import parse_csv, parse_json
 from app.services.session_manager import SessionManager
 
 
@@ -34,10 +34,17 @@ async def upload_preview(
             detail="Upload requires a PostgreSQL database connection. DATABASE_URL is not configured.",
         )
 
-    if not file.filename or not file.filename.lower().endswith(".csv"):
+    if not file.filename:
         raise HTTPException(
             status_code=400,
-            detail="Only .csv files are supported. Please upload a CSV file.",
+            detail="No filename provided.",
+        )
+
+    filename_lower = file.filename.lower()
+    if not (filename_lower.endswith(".csv") or filename_lower.endswith(".json")):
+        raise HTTPException(
+            status_code=400,
+            detail="Only .csv and .json files are supported. Please upload a CSV or JSON file.",
         )
 
     try:
@@ -51,14 +58,16 @@ async def upload_preview(
                 detail=f"File too large. Maximum size is {max_size // (1024 * 1024)}MB.",
             )
 
-        preview = parse_csv(content)
+        is_json = filename_lower.endswith(".json")
+        preview = parse_json(content) if is_json else parse_csv(content)
 
         preview_token = session_manager.store_preview(preview)
 
         logger.info(
-            "CSV preview generated",
+            "File preview generated",
             extra={
                 "filename": file.filename,
+                "file_type": "json" if is_json else "csv",
                 "columns": len(preview.columns),
                 "total_rows": preview.total_rows,
                 "preview_token": preview_token,
@@ -73,10 +82,10 @@ async def upload_preview(
         )
 
     except ValueError as exc:
-        logger.warning("CSV parsing failed", extra={"filename": file.filename, "error": str(exc)})
+        logger.warning("File parsing failed", extra={"filename": file.filename, "error": str(exc)})
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        logger.exception("Unexpected error during CSV preview", extra={"filename": file.filename})
+        logger.exception("Unexpected error during file preview", extra={"filename": file.filename})
         raise HTTPException(status_code=500, detail="Failed to process file")
 
 

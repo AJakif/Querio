@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import re
 from datetime import datetime
 from typing import Any
@@ -37,7 +38,7 @@ class InferredColumn:
         return "text"
 
 
-class CsvPreviewResult:
+class PreviewResult:
     columns: list[InferredColumn]
     sample_rows: list[dict[str, Any]]
     all_rows: list[dict[str, Any]]
@@ -50,7 +51,7 @@ class CsvPreviewResult:
         self.total_rows = len(all_rows)
 
 
-def parse_csv(content: bytes, sample_size: int = 10) -> CsvPreviewResult:
+def parse_csv(content: bytes, sample_size: int = 10) -> PreviewResult:
     decoded = _decode_content(content)
     reader = csv.DictReader(io.StringIO(decoded))
     if reader.fieldnames is None or len(reader.fieldnames) == 0:
@@ -81,7 +82,59 @@ def parse_csv(content: bytes, sample_size: int = 10) -> CsvPreviewResult:
         },
     )
 
-    return CsvPreviewResult(columns=columns, all_rows=rows, sample_size=sample_size)
+    return PreviewResult(columns=columns, all_rows=rows, sample_size=sample_size)
+
+
+def parse_json(content: bytes, sample_size: int = 10) -> PreviewResult:
+    decoded = _decode_content(content)
+    data = json.loads(decoded)
+
+    if not isinstance(data, list):
+        raise ValueError("JSON must be a flat array of objects")
+
+    if len(data) == 0:
+        raise ValueError("JSON array is empty")
+
+    for item in data:
+        if not isinstance(item, dict):
+            raise ValueError("All elements in the JSON array must be objects")
+
+    all_keys: list[str] = []
+    seen: set[str] = set()
+    for item in data:
+        for key in item:
+            if key not in seen:
+                all_keys.append(key)
+                seen.add(key)
+
+    if not all_keys:
+        raise ValueError("JSON objects have no keys")
+
+    sanitized_keys = [_sanitize_column_name(k) for k in all_keys]
+    name_map = dict(zip(all_keys, sanitized_keys))
+
+    rows: list[dict[str, Any]] = []
+    for item in data:
+        sanitized = {}
+        for original_key, sanitized_key in name_map.items():
+            sanitized[sanitized_key] = item.get(original_key, None)
+        rows.append(sanitized)
+
+    columns = []
+    for col_name in sanitized_keys:
+        col_values = [_value_to_str(row.get(col_name)) for row in rows]
+        columns.append(InferredColumn(col_name, col_values))
+
+    logger.info(
+        "Parsed JSON file",
+        extra={
+            "column_count": len(columns),
+            "total_rows": len(rows),
+            "columns": [{"name": c.name, "type": c.inferred_type} for c in columns],
+        },
+    )
+
+    return PreviewResult(columns=columns, all_rows=rows, sample_size=sample_size)
 
 
 def _decode_content(content: bytes) -> str:
@@ -155,3 +208,15 @@ def _is_timestamp(v: str) -> bool:
         except ValueError:
             continue
     return False
+
+
+def _value_to_str(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, (dict, list)):
+        return json.dumps(value)
+    return str(value)

@@ -19,8 +19,9 @@ export function UploadZone({ state, onStateChange }: UploadZoneProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   async function handleFile(file: File) {
-    if (!file.name.toLowerCase().endsWith('.csv')) {
-      onStateChange({ phase: 'error', message: 'Only .csv files are supported.' })
+    const ext = file.name.toLowerCase().split('.').pop()
+    if (ext !== 'csv' && ext !== 'json') {
+      onStateChange({ phase: 'error', message: 'Only .csv and .json files are supported.' })
       return
     }
 
@@ -81,7 +82,7 @@ export function UploadZone({ state, onStateChange }: UploadZoneProps) {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".csv"
+          accept=".csv,.json"
           hidden
           onChange={(e) => {
             const file = e.target.files?.[0]
@@ -89,9 +90,9 @@ export function UploadZone({ state, onStateChange }: UploadZoneProps) {
           }}
         />
         <div className="upload-zone-content">
-          <div className="upload-zone-icon">CSV</div>
+          <div className="upload-zone-icon">CSV / JSON</div>
           <p className="upload-zone-title">Upload your own data</p>
-          <p className="upload-zone-hint">Click or drop a CSV file to begin</p>
+          <p className="upload-zone-hint">Click or drop a CSV or JSON file to begin</p>
         </div>
       </div>
     )

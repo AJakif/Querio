@@ -6,7 +6,7 @@ from psycopg2 import extras as psycopg2_extras
 
 from app.core.db import get_connection
 from app.core.logging import get_logger
-from app.services.csv_ingestion import CsvPreviewResult, InferredColumn
+from app.services.csv_ingestion import PreviewResult, InferredColumn
 from app.repositories.postgres.schema_repository_pg import PostgresSchemaRepository
 from app.repositories.postgres.query_repository_pg import PostgresQueryRepository
 
@@ -28,15 +28,15 @@ SAMPLE_ROWS_COUNT = 10
 
 class PreviewStore:
     def __init__(self):
-        self._store: dict[str, CsvPreviewResult] = {}
+        self._store: dict[str, PreviewResult] = {}
 
-    def store(self, result: CsvPreviewResult) -> str:
+    def store(self, result: PreviewResult) -> str:
         token = str(uuid.uuid4())
         self._store[token] = result
         logger.debug("Stored preview data", extra={"token": token, "rows": result.total_rows})
         return token
 
-    def get(self, token: str) -> CsvPreviewResult | None:
+    def get(self, token: str) -> PreviewResult | None:
         data = self._store.get(token)
         if data is None:
             logger.warning("Preview token not found", extra={"token": token})
@@ -50,10 +50,10 @@ class SessionManager:
     def __init__(self, preview_store: PreviewStore | None = None):
         self._preview_store = preview_store or PreviewStore()
 
-    def store_preview(self, result: CsvPreviewResult) -> str:
+    def store_preview(self, result: PreviewResult) -> str:
         return self._preview_store.store(result)
 
-    def get_preview(self, token: str) -> CsvPreviewResult | None:
+    def get_preview(self, token: str) -> PreviewResult | None:
         return self._preview_store.get(token)
 
     async def create_session_schema(self, preview_token: str) -> tuple[str, int]:
