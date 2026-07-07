@@ -114,6 +114,10 @@ class Settings(BaseSettings):
             return provider.lower()
         return "openai"
 
+    def has_env(self, key: str) -> bool:
+        from os import environ
+        return key in environ and environ[key].strip() != ""
+
     @property
     def effective_model_name(self) -> str:
         provider = self.effective_model_provider

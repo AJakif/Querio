@@ -31,11 +31,16 @@ async def ask(
             "question": body.question,
         },
     )
+    session_schema = None
+    if body.session_id:
+        session_schema = f"session_{body.session_id.replace('-', '_')}"
+
     result = await service.answer(
         question=body.question,
         conversation_id=body.conversation_id,
         clarification_answer=body.clarification_answer,
         request_id=request_id,
+        session_schema=session_schema,
     )
 
     if isinstance(result, ClarifyingQuestion):

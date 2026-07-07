@@ -25,7 +25,7 @@ class GeneratedSQL(BaseModel):
 
 class SqlGenerator(ABC):
     @abstractmethod
-    async def generate(self, question: str) -> GeneratedSQL:
+    async def generate(self, question: str, schema_repo_override: SchemaRepository | None = None) -> GeneratedSQL:
         ...
 
 
@@ -100,9 +100,10 @@ class PydanticAiSqlGenerator(SqlGenerator):
         self._agent.tool(get_schema)
         self._schema_repo = schema_repo
 
-    async def generate(self, question: str) -> GeneratedSQL:
+    async def generate(self, question: str, schema_repo_override: SchemaRepository | None = None) -> GeneratedSQL:
+        repo = schema_repo_override or self._schema_repo
         logger.debug("Generating SQL from model", extra={"question_length": len(question)})
-        result = await self._agent.run(question, deps=self._schema_repo)
+        result = await self._agent.run(question, deps=repo)
         logger.debug(f"Model returned result {result}", extra={"result_type": type(result).__name__})
         generated = _extract_generated_sql(result)
         logger.debug(
@@ -116,7 +117,7 @@ class PydanticAiSqlGenerator(SqlGenerator):
 
 
 class FakeSqlGenerator(SqlGenerator):
-    async def generate(self, question: str) -> GeneratedSQL:
+    async def generate(self, question: str, schema_repo_override: SchemaRepository | None = None) -> GeneratedSQL:
         logger.debug("Using fake SQL generator", extra={"question_length": len(question)})
         return GeneratedSQL(
             sql="SELECT COUNT(*) AS order_count FROM marts.fct_orders",

@@ -9,7 +9,7 @@ from app.agent.agent import FakeSqlGenerator, GeneratedSQL
 
 
 class FakeSqlGeneratorWithClarification(FakeSqlGenerator):
-    async def generate(self, question: str) -> GeneratedSQL:
+    async def generate(self, question: str, **kwargs) -> GeneratedSQL:
         return GeneratedSQL(
             sql="", explanation="ambiguous",
             requires_clarification=True,
@@ -19,14 +19,14 @@ class FakeSqlGeneratorWithClarification(FakeSqlGenerator):
 
 
 class FakeSqlGeneratorInvalidSql(FakeSqlGenerator):
-    async def generate(self, question: str) -> GeneratedSQL:
+    async def generate(self, question: str, **kwargs) -> GeneratedSQL:
         return GeneratedSQL(
             sql="DROP TABLE orders", explanation="malicious"
         )
 
 
 class FakeSqlGeneratorJoin(FakeSqlGenerator):
-    async def generate(self, question: str) -> GeneratedSQL:
+    async def generate(self, question: str, **kwargs) -> GeneratedSQL:
         return GeneratedSQL(
             sql="SELECT o.order_id, c.name FROM orders o JOIN customers c ON o.customer_id = c.customer_id LIMIT 5",
             explanation="Joined orders with customers.",
@@ -37,7 +37,7 @@ class FakeSqlGeneratorClarifyThenAnswer(FakeSqlGenerator):
     def __init__(self):
         self._called = False
 
-    async def generate(self, question: str) -> GeneratedSQL:
+    async def generate(self, question: str, **kwargs) -> GeneratedSQL:
         if not self._called:
             self._called = True
             return GeneratedSQL(
@@ -51,7 +51,7 @@ class FakeSqlGeneratorClarifyThenAnswer(FakeSqlGenerator):
 
 
 class FakeSqlGeneratorClarifyAnswer(FakeSqlGenerator):
-    async def generate(self, question: str) -> GeneratedSQL:
+    async def generate(self, question: str, **kwargs) -> GeneratedSQL:
         return GeneratedSQL(
             sql="SELECT COUNT(*) FROM customers",
             explanation="Counting customers.",
@@ -62,7 +62,7 @@ class FakeSqlGeneratorRepairing(FakeSqlGenerator):
     def __init__(self):
         self.calls: list[str] = []
 
-    async def generate(self, question: str) -> GeneratedSQL:
+    async def generate(self, question: str, **kwargs) -> GeneratedSQL:
         self.calls.append(question)
         if "The previous SQL failed" in question:
             return GeneratedSQL(

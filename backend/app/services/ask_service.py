@@ -27,15 +27,30 @@ class AskService:
         self._query_repo = query_repository
         self._conversation_store = conversation_store or ConversationStore()
 
+    async def _session_schema_repo(self, session_schema: str) -> SchemaRepository | None:
+        if not session_schema:
+            return None
+        from app.repositories.postgres.schema_repository_pg import PostgresSchemaRepository
+        return PostgresSchemaRepository(schema=session_schema)
+
+    async def _session_query_repo(self, session_schema: str) -> QueryRepository | None:
+        if not session_schema:
+            return None
+        from app.repositories.postgres.query_repository_pg import PostgresQueryRepository
+        return PostgresQueryRepository(schema_override=session_schema)
+
     async def answer(
         self,
         question: str,
         conversation_id: str | None = None,
         clarification_answer: str | None = None,
         request_id: str | None = None,
+        session_schema: str | None = None,
     ) -> Answer | ClarifyingQuestion:
         request_id = request_id or str(uuid.uuid4())
         started_at = time.perf_counter()
+        schema_repo = await self._session_schema_repo(session_schema) if session_schema else None
+        query_repo = await self._session_query_repo(session_schema) if session_schema else None
         logger.info(
             "Processing ask request",
             extra={
@@ -44,6 +59,7 @@ class AskService:
                 "question": question,
                 "selected_provider": settings.effective_model_provider,
                 "has_clarification_answer": clarification_answer is not None,
+                "session_schema": session_schema,
             },
         )
         if conversation_id and clarification_answer is not None:
@@ -56,9 +72,9 @@ class AskService:
                 return Answer(text="Sorry, I couldn't find that conversation. Please try asking your question again.")
             self._conversation_store.complete(conversation_id)
             combined_question = _combine_clarification(ctx.original_question, clarification_answer)
-            return await self._execute_answer(combined_question, conversation_id, request_id, started_at)
+            return await self._execute_answer(combined_question, conversation_id, request_id, started_at, schema_repo=schema_repo, query_repo=query_repo)
 
-        generated = await self._sql_generator.generate(question)
+        generated = await self._sql_generator.generate(question, schema_repo_override=schema_repo)
 
         if generated.requires_clarification:
             conv_id = self._conversation_store.create(question, generated.clarification_options)
@@ -76,7 +92,7 @@ class AskService:
                 conversation_id=conv_id,
             )
 
-        return await self._do_execute(generated, question, conversation_id, request_id, started_at)
+        return await self._do_execute(generated, question, conversation_id, request_id, started_at, query_repo=query_repo, schema_repo=schema_repo)
 
     async def _do_execute(
         self,
@@ -86,7 +102,11 @@ class AskService:
         request_id: str | None = None,
         started_at: float | None = None,
         allow_repair: bool = True,
+        query_repo: QueryRepository | None = None,
+        schema_repo: SchemaRepository | None = None,
     ) -> Answer | ClarifyingQuestion:
+        effective_query_repo = query_repo or self._query_repo
+        effective_schema_repo = schema_repo or self._schema_repo
         safe_sql, error = validate_sql(generated.sql, max_rows=settings.max_rows)
         if error:
             logger.warning(
@@ -103,7 +123,7 @@ class AskService:
 
         logger.debug("Executing SQL", extra={"request_id": request_id, "conversation_id": conversation_id, "sql": safe_sql})
         try:
-            rows = await self._query_repo.execute(safe_sql or generated.sql)
+            rows = await effective_query_repo.execute(safe_sql or generated.sql)
         except Exception as exc:
             if allow_repair and _is_retriable_schema_error(exc):
                 logger.warning(
@@ -117,7 +137,8 @@ class AskService:
                     },
                 )
                 repaired = await self._sql_generator.generate(
-                    _build_repair_prompt(question, generated.sql, exc)
+                    _build_repair_prompt(question, generated.sql, exc),
+                    schema_repo_override=schema_repo,
                 )
                 if repaired.requires_clarification:
                     conv_id = self._conversation_store.create(question, repaired.clarification_options)
@@ -133,6 +154,8 @@ class AskService:
                     request_id,
                     started_at,
                     allow_repair=False,
+                    query_repo=query_repo,
+                    schema_repo=schema_repo,
                 )
 
             logger.exception(
@@ -186,9 +209,11 @@ class AskService:
         conversation_id: str,
         request_id: str | None = None,
         started_at: float | None = None,
+        schema_repo: SchemaRepository | None = None,
+        query_repo: QueryRepository | None = None,
     ) -> Answer | ClarifyingQuestion:
-        generated = await self._sql_generator.generate(question)
-        return await self._do_execute(generated, question, conversation_id, request_id, started_at)
+        generated = await self._sql_generator.generate(question, schema_repo_override=schema_repo)
+        return await self._do_execute(generated, question, conversation_id, request_id, started_at, query_repo=query_repo, schema_repo=schema_repo)
 
 
 def _format_answer(rows: list[dict], generated: GeneratedSQL) -> str:

@@ -8,6 +8,7 @@ export async function askQuestion(
   question: string,
   conversation_id?: string,
   clarification_answer?: string,
+  session_id?: string,
 ): Promise<AskResponse> {
   if (USE_MOCK) {
     await new Promise((r) => setTimeout(r, 50))
@@ -21,6 +22,9 @@ export async function askQuestion(
   }
   if (clarification_answer !== undefined && conversation_id !== undefined) {
     body.clarification_answer = clarification_answer
+  }
+  if (session_id !== undefined) {
+    body.session_id = session_id
   }
 
   const response = await fetch(BASE_URL, {

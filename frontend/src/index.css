@@ -240,3 +240,243 @@ body {
   margin-bottom: 8px;
   color: var(--color-text-secondary);
 }
+
+.upload-zone {
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius);
+  padding: 24px;
+  margin: 12px 0;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.upload-zone:hover {
+  border-color: var(--color-primary);
+  background: #f8f9ff;
+}
+
+.upload-zone.uploading {
+  cursor: default;
+  border-style: solid;
+  border-color: var(--color-primary);
+  background: #f8f9ff;
+}
+
+.upload-zone.ready {
+  cursor: default;
+  border-style: solid;
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.upload-zone.error {
+  cursor: default;
+  border-style: solid;
+  border-color: var(--color-error);
+  background: #fef2f2;
+}
+
+.upload-zone-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.upload-zone-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.upload-zone-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.upload-zone-hint {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.upload-error-text {
+  color: var(--color-error);
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.upload-reset-btn {
+  padding: 6px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s;
+}
+
+.upload-reset-btn:hover {
+  background: var(--color-bg);
+}
+
+.schema-preview {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin: 12px 0;
+  background: var(--color-surface);
+}
+
+.schema-preview-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.schema-preview-meta {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 16px;
+}
+
+.schema-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 12px;
+}
+
+.schema-table th,
+.schema-table td {
+  text-align: left;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 14px;
+}
+
+.schema-table th {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.schema-col-name {
+  font-family: monospace;
+  font-weight: 600;
+}
+
+.schema-type-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.schema-type-text {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.schema-type-integer,
+.schema-type-numeric {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.schema-type-date,
+.schema-type-timestamp {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.schema-sample-details {
+  margin-bottom: 16px;
+}
+
+.schema-sample-details summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.schema-sample-table-wrapper {
+  overflow-x: auto;
+}
+
+.schema-sample-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.schema-sample-table th,
+.schema-sample-table td {
+  text-align: left;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.schema-sample-table th {
+  font-weight: 600;
+  background: var(--color-bg);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.schema-sample-table td {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.schema-preview-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.schema-confirm-btn {
+  padding: 10px 20px;
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.schema-confirm-btn:hover {
+  background: var(--color-primary-hover);
+}
+
+.schema-cancel-btn {
+  padding: 10px 20px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.schema-cancel-btn:hover {
+  background: var(--color-bg);
+}

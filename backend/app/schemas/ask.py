@@ -13,6 +13,7 @@ class AskRequest(BaseModel):
     question: str
     conversation_id: str | None = None
     clarification_answer: str | None = None
+    session_id: str | None = None
 
 
 class ChartSpecResponse(BaseModel):

@@ -7,7 +7,9 @@ from fastapi import FastAPI
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.api.routes.ask import router as ask_router
+from app.api.routes.upload import router as upload_router
 from app.services.ask_service import AskService
+from app.services.session_manager import SessionManager
 from app.repositories.base import SchemaRepository, QueryRepository
 from app.repositories.memory.schema_repository_memory import InMemorySchemaRepository
 from app.repositories.memory.query_repository_memory import InMemoryQueryRepository
@@ -19,6 +21,7 @@ from app.agent.agent import SqlGenerator, PydanticAiSqlGenerator, FakeSqlGenerat
 @dataclass
 class AppState:
     ask_service: AskService
+    session_manager: SessionManager
 
 
 app_state: AppState | None = None
@@ -101,12 +104,14 @@ async def lifespan(app: FastAPI):
     schema_repo, query_repo = _build_repos()
     await _verify_schema_ready(schema_repo)
     sql_generator = _build_sql_generator(schema_repo)
+    session_manager = SessionManager()
     app_state = AppState(
         ask_service=AskService(
             sql_generator=sql_generator,
             schema_repository=schema_repo,
             query_repository=query_repo,
         ),
+        session_manager=session_manager,
     )
     yield
     logger.info("Shutting down Querio API")
@@ -116,6 +121,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Querio", lifespan=lifespan)
 
 app.include_router(ask_router, prefix="/api")
+app.include_router(upload_router, prefix="/api")
 
 
 @app.get("/health")

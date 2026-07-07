@@ -42,7 +42,7 @@ class TestClarifyRoundTrip:
         from app.services.conversation_store import ConversationStore
 
         class _ClarifyGen(FakeSqlGenerator):
-            async def generate(self, question: str) -> GeneratedSQL:
+            async def generate(self, question: str, **kwargs) -> GeneratedSQL:
                 return GeneratedSQL(
                     sql="", explanation="ambiguous",
                     requires_clarification=True,
@@ -87,7 +87,7 @@ class TestGuardrailRejection:
         from app.agent.agent import FakeSqlGenerator, GeneratedSQL
 
         class InvalidSqlGen(FakeSqlGenerator):
-            async def generate(self, question: str) -> GeneratedSQL:
+            async def generate(self, question: str, **kwargs) -> GeneratedSQL:
                 return GeneratedSQL(sql="DROP TABLE orders", explanation="malicious")
 
         async def _override() -> AskService:

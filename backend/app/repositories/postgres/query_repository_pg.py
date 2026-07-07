@@ -9,8 +9,9 @@ logger = get_logger("repositories.postgres.query")
 
 
 class PostgresQueryRepository(QueryRepository):
-    def __init__(self, connection_factory=None):
+    def __init__(self, connection_factory=None, schema_override: str | None = None):
         self._conn_factory = connection_factory
+        self._schema_override = schema_override
 
     def _get_conn(self):
         if self._conn_factory:
@@ -18,13 +19,17 @@ class PostgresQueryRepository(QueryRepository):
         from app.core.db import get_connection
         return get_connection()
 
+    @property
+    def _effective_schema(self) -> str:
+        return self._schema_override or settings.db_schema
+
     async def execute(self, sql: str) -> list[dict]:
         def _run():
             logger.debug("Opening Postgres connection for query execution")
             with self._get_conn() as conn:
                 with conn.cursor(cursor_factory=RealDictCursor) as cur:
                     cur.execute("SET TRANSACTION READ ONLY")
-                    cur.execute("SELECT set_config('search_path', %s, true)", (f"{settings.db_schema},public",))
+                    cur.execute("SELECT set_config('search_path', %s, true)", (f"{self._effective_schema},public",))
                     cur.execute("SET LOCAL statement_timeout = %s", (settings.query_timeout_ms,))
                     logger.debug("Executing Postgres query", extra={"sql": sql})
                     cur.execute(sql)
