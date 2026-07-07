@@ -1,6 +1,7 @@
 import http.client
 import ipaddress
 import socket
+import ssl
 from urllib.parse import urlparse
 
 from app.core.logging import get_logger
@@ -61,9 +62,12 @@ def _validate_and_resolve(url: str) -> tuple[str, int, str, str]:
     if not parsed.hostname:
         raise SSRFError("URL has no hostname.")
 
-    host = parsed.hostname
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    path = parsed.path or "/"
+    host: str = parsed.hostname or ""
+    if not host:
+        raise SSRFError("URL has no hostname.")
+
+    port: int = parsed.port or (443 if parsed.scheme == "https" else 80)
+    path: str = parsed.path or "/"
     if parsed.query:
         path = f"{path}?{parsed.query}"
 
@@ -82,19 +86,27 @@ def _validate_and_resolve(url: str) -> tuple[str, int, str, str]:
     if not addrs:
         raise SSRFError(f"Could not resolve hostname '{host}' to any IP address.")
 
-    resolved_ip = None
-    for family, _type, _proto, _canonname, sockaddr in addrs:
-        ip_str = sockaddr[0]
+    resolved_ip: str = ""
+    for _family, _type, _proto, _canonname, sockaddr in addrs:
+        ip_str = str(sockaddr[0])
         ip = ipaddress.ip_address(ip_str)
         _check_ip(ip)
-        if resolved_ip is None:
-            resolved_ip = ip_str
+        resolved_ip = ip_str
+        break
 
     return host, port, path, resolved_ip
 
 
 def fetch_url(url: str, max_size: int = 50 * 1024 * 1024, timeout: int = DEFAULT_TIMEOUT) -> tuple[bytes, str]:
-    host, port, path, resolved_ip = _validate_and_resolve(url)
+    parsed = urlparse(url)
+    scheme = parsed.scheme
+    host = parsed.hostname or ""
+    port = parsed.port or (443 if scheme == "https" else 80)
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+
+    _, _, _, resolved_ip = _validate_and_resolve(url)
 
     logger.info(
         "Fetching URL content",
@@ -106,14 +118,15 @@ def fetch_url(url: str, max_size: int = 50 * 1024 * 1024, timeout: int = DEFAULT
         },
     )
 
-    if urlparse(url).scheme == "https":
-        conn = http.client.HTTPSConnection(resolved_ip, port, timeout=timeout)
+    if scheme == "https":
+        ctx = ssl.create_default_context()
+        raw_sock = socket.create_connection((resolved_ip, port), timeout=timeout)
+        conn = http.client.HTTPSConnection(host, port, timeout=timeout, context=ctx)
+        conn.sock = ctx.wrap_socket(raw_sock, server_hostname=host)
     else:
         conn = http.client.HTTPConnection(resolved_ip, port, timeout=timeout)
 
-    host_header = host
-    if port != (443 if urlparse(url).scheme == "https" else 80):
-        host_header = f"{host}:{port}"
+    host_header = host if port in (80, 443) else f"{host}:{port}"
 
     try:
         conn.putrequest("GET", path)
