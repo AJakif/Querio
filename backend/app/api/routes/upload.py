@@ -1,15 +1,19 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 
 from app.core.logging import get_logger
 from app.core.config import settings
 from app.schemas.upload import (
     UploadPreviewResponse,
+    UrlPreviewRequest,
     UploadConfirmRequest,
     UploadConfirmResponse,
     ColumnPreview,
 )
 from app.services.csv_ingestion import parse_csv, parse_json
 from app.services.session_manager import SessionManager
+from app.services.ssrf_guard import fetch_url, SSRFError
 
 
 router = APIRouter()
@@ -87,6 +91,70 @@ async def upload_preview(
     except Exception as exc:
         logger.exception("Unexpected error during file preview", extra={"filename": file.filename})
         raise HTTPException(status_code=500, detail="Failed to process file")
+
+
+@router.post("/upload/preview-from-url", response_model=UploadPreviewResponse)
+async def upload_preview_from_url(
+    body: UrlPreviewRequest,
+    session_manager: SessionManager = Depends(get_session_manager),
+):
+    if not settings.has_env("DATABASE_URL"):
+        raise HTTPException(
+            status_code=400,
+            detail="Upload requires a PostgreSQL database connection. DATABASE_URL is not configured.",
+        )
+
+    url = body.url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required.")
+
+    try:
+        content, content_type = await asyncio.to_thread(
+            fetch_url, url, 50 * 1024 * 1024
+        )
+
+        if "json" in content_type:
+            is_json = True
+        elif "csv" in content_type:
+            is_json = False
+        else:
+            is_json = url.lower().endswith(".json")
+
+        if is_json:
+            preview = parse_json(content)
+        else:
+            preview = parse_csv(content)
+
+        preview_token = session_manager.store_preview(preview)
+
+        logger.info(
+            "URL preview generated",
+            extra={
+                "url": url,
+                "content_type": content_type,
+                "file_type": "json" if is_json else "csv",
+                "columns": len(preview.columns),
+                "total_rows": preview.total_rows,
+                "preview_token": preview_token,
+            },
+        )
+
+        return UploadPreviewResponse(
+            columns=[ColumnPreview(name=c.name, inferred_type=c.inferred_type) for c in preview.columns],
+            sample_rows=preview.sample_rows,
+            total_rows=preview.total_rows,
+            preview_token=preview_token,
+        )
+
+    except SSRFError as exc:
+        logger.warning("URL fetch rejected by SSRF guard", extra={"url": url, "error": str(exc)})
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ValueError as exc:
+        logger.warning("URL content parsing failed", extra={"url": url, "error": str(exc)})
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Unexpected error during URL preview", extra={"url": url})
+        raise HTTPException(status_code=500, detail="Failed to fetch or process URL")
 
 
 @router.post("/upload/confirm", response_model=UploadConfirmResponse)

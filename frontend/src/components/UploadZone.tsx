@@ -1,10 +1,11 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { SchemaPreview } from './SchemaPreview'
-import { uploadPreview, uploadConfirm, type UploadPreviewResponse } from '../api/uploadApi'
+import { uploadPreview, uploadPreviewFromUrl, uploadConfirm, type UploadPreviewResponse } from '../api/uploadApi'
 
 export type UploadState =
   | { phase: 'idle' }
   | { phase: 'uploading'; fileName: string }
+  | { phase: 'url-loading' }
   | { phase: 'preview'; preview: UploadPreviewResponse }
   | { phase: 'loading' }
   | { phase: 'ready'; sessionId: string; rowCount: number; tableName: string }
@@ -17,6 +18,7 @@ interface UploadZoneProps {
 
 export function UploadZone({ state, onStateChange }: UploadZoneProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [urlInput, setUrlInput] = useState('')
 
   async function handleFile(file: File) {
     const ext = file.name.toLowerCase().split('.').pop()
@@ -35,6 +37,42 @@ export function UploadZone({ state, onStateChange }: UploadZoneProps) {
         phase: 'error',
         message: err instanceof Error ? err.message : 'Upload failed',
       })
+    }
+  }
+
+  async function handleUrlSubmit() {
+    const url = urlInput.trim()
+    if (!url) return
+
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        onStateChange({ phase: 'error', message: 'Only HTTP and HTTPS URLs are supported.' })
+        return
+      }
+    } catch {
+      onStateChange({ phase: 'error', message: 'Invalid URL. Please enter a valid HTTP or HTTPS URL.' })
+      return
+    }
+
+    onStateChange({ phase: 'url-loading' })
+
+    try {
+      const preview = await uploadPreviewFromUrl(url)
+      onStateChange({ phase: 'preview', preview })
+      setUrlInput('')
+    } catch (err) {
+      onStateChange({
+        phase: 'error',
+        message: err instanceof Error ? err.message : 'URL fetch failed',
+      })
+    }
+  }
+
+  function handleUrlKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter') {
+      handleUrlSubmit()
     }
   }
 
@@ -73,26 +111,48 @@ export function UploadZone({ state, onStateChange }: UploadZoneProps) {
 
   if (state.phase === 'idle') {
     return (
-      <div
-        className="upload-zone"
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onClick={() => fileInputRef.current?.click()}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv,.json"
-          hidden
-          onChange={(e) => {
-            const file = e.target.files?.[0]
-            if (file) handleFile(file)
-          }}
-        />
-        <div className="upload-zone-content">
-          <div className="upload-zone-icon">CSV / JSON</div>
-          <p className="upload-zone-title">Upload your own data</p>
-          <p className="upload-zone-hint">Click or drop a CSV or JSON file to begin</p>
+      <div className="upload-section">
+        <div
+          className="upload-zone"
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.json"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) handleFile(file)
+            }}
+          />
+          <div className="upload-zone-content">
+            <div className="upload-zone-icon">CSV / JSON</div>
+            <p className="upload-zone-title">Upload your own data</p>
+            <p className="upload-zone-hint">Click or drop a CSV or JSON file to begin</p>
+          </div>
+        </div>
+        <div className="upload-divider">
+          <span className="upload-divider-text">or paste a URL</span>
+        </div>
+        <div className="upload-url-row">
+          <input
+            className="upload-url-input"
+            type="text"
+            placeholder="https://example.com/data.csv"
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            onKeyDown={handleUrlKeyDown}
+          />
+          <button
+            className="upload-url-btn"
+            onClick={handleUrlSubmit}
+            disabled={!urlInput.trim()}
+          >
+            Fetch
+          </button>
         </div>
       </div>
     )
@@ -102,6 +162,14 @@ export function UploadZone({ state, onStateChange }: UploadZoneProps) {
     return (
       <div className="upload-zone uploading">
         <p>Uploading <strong>{state.fileName}</strong>...</p>
+      </div>
+    )
+  }
+
+  if (state.phase === 'url-loading') {
+    return (
+      <div className="upload-zone uploading">
+        <p>Fetching data from URL...</p>
       </div>
     )
   }

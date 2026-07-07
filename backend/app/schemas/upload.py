@@ -14,6 +14,10 @@ class UploadPreviewResponse(BaseModel):
     preview_token: str
 
 
+class UrlPreviewRequest(BaseModel):
+    url: str
+
+
 class UploadConfirmRequest(BaseModel):
     preview_token: str
 

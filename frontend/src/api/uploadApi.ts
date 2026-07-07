@@ -35,6 +35,21 @@ export async function uploadPreview(file: File): Promise<UploadPreviewResponse> 
   return response.json() as Promise<UploadPreviewResponse>
 }
 
+export async function uploadPreviewFromUrl(url: string): Promise<UploadPreviewResponse> {
+  const response = await fetch(`${BASE_URL}/preview-from-url`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  })
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(body.detail || `URL fetch failed with status ${response.status}`)
+  }
+
+  return response.json() as Promise<UploadPreviewResponse>
+}
+
 export async function uploadConfirm(previewToken: string): Promise<UploadConfirmResponse> {
   const response = await fetch(`${BASE_URL}/confirm`, {
     method: 'POST',

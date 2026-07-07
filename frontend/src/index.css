@@ -241,11 +241,14 @@ body {
   color: var(--color-text-secondary);
 }
 
+.upload-section {
+  margin: 12px 0;
+}
+
 .upload-zone {
   border: 2px dashed var(--color-border);
   border-radius: var(--radius);
   padding: 24px;
-  margin: 12px 0;
   text-align: center;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
@@ -254,6 +257,69 @@ body {
 .upload-zone:hover {
   border-color: var(--color-primary);
   background: #f8f9ff;
+}
+
+.upload-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.upload-divider::before,
+.upload-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.upload-divider-text {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.upload-url-row {
+  display: flex;
+  gap: 8px;
+}
+
+.upload-url-input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.upload-url-input:focus {
+  border-color: var(--color-primary);
+}
+
+.upload-url-btn {
+  padding: 10px 20px;
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.upload-url-btn:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.upload-url-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .upload-zone.uploading {
