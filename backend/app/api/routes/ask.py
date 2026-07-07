@@ -32,8 +32,12 @@ async def ask(
         },
     )
     session_schema = None
+    context_note = ""
     if body.session_id:
         session_schema = f"session_{body.session_id.replace('-', '_')}"
+        from app.main import app_state
+        if app_state is not None:
+            context_note = app_state.session_manager.get_session_note(body.session_id)
 
     result = await service.answer(
         question=body.question,
@@ -41,6 +45,7 @@ async def ask(
         clarification_answer=body.clarification_answer,
         request_id=request_id,
         session_schema=session_schema,
+        context_note=context_note,
     )
 
     if isinstance(result, ClarifyingQuestion):
