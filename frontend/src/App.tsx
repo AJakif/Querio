@@ -1,7 +1,8 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { ChatThread } from './components/ChatThread'
 import { askQuestion } from './api/askApi'
 import { UploadZone, type UploadState } from './components/UploadZone'
+import { teardownSession } from './api/uploadApi'
 import type { ChatMessage } from './types/api'
 
 export default function App() {
@@ -10,7 +11,36 @@ export default function App() {
   const [error, setError] = useState<string | undefined>()
   const [uploadState, setUploadState] = useState<UploadState>({ phase: 'idle' })
 
+  const latestSessionIdRef = useRef<string | undefined>(undefined)
+
+  useEffect(() => {
+    if (uploadState.phase === 'ready') {
+      latestSessionIdRef.current = uploadState.sessionId
+    }
+  }, [uploadState])
+
   const sessionId = uploadState.phase === 'ready' ? uploadState.sessionId : undefined
+
+  const handleClearSession = useCallback(async () => {
+    const sid = latestSessionIdRef.current
+    if (!sid) return
+    latestSessionIdRef.current = undefined
+    try {
+      await teardownSession(sid)
+    } catch {
+      // best-effort; session will be orphaned but won't block the user
+    }
+  }, [])
+
+  useEffect(() => {
+    function onBeforeUnload() {
+      const sid = latestSessionIdRef.current
+      if (!sid) return
+      navigator.sendBeacon(`/api/session/${encodeURIComponent(sid)}/teardown`)
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [])
 
   const handleSend = useCallback(async (question: string) => {
     setLoading(true)
@@ -46,7 +76,12 @@ export default function App() {
         <h1>Querio</h1>
       </header>
       <main className="app-main">
-        <UploadZone state={uploadState} onStateChange={setUploadState} />
+        <UploadZone
+          state={uploadState}
+          onStateChange={setUploadState}
+          currentSessionId={sessionId}
+          onClearSession={handleClearSession}
+        />
         <ChatThread
           messages={messages}
           onSend={handleSend}

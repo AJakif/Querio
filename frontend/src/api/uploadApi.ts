@@ -59,11 +59,15 @@ export async function uploadPreviewFromUrl(url: string): Promise<UploadPreviewRe
   return response.json() as Promise<UploadPreviewResponse>
 }
 
-export async function uploadConfirm(previewToken: string, contextNote?: string): Promise<UploadConfirmResponse> {
+export async function uploadConfirm(previewToken: string, contextNote?: string, currentSessionId?: string): Promise<UploadConfirmResponse> {
   const response = await fetch(`${BASE_URL}/confirm`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ preview_token: previewToken, context_note: contextNote ?? '' }),
+    body: JSON.stringify({
+      preview_token: previewToken,
+      context_note: contextNote ?? '',
+      current_session_id: currentSessionId ?? '',
+    }),
   })
 
   if (!response.ok) {
@@ -72,4 +76,15 @@ export async function uploadConfirm(previewToken: string, contextNote?: string):
   }
 
   return response.json() as Promise<UploadConfirmResponse>
+}
+
+export async function teardownSession(sessionId: string): Promise<void> {
+  const response = await fetch(`/api/session/${encodeURIComponent(sessionId)}/teardown`, {
+    method: 'POST',
+  })
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(body.detail || `Session teardown failed with status ${response.status}`)
+  }
 }

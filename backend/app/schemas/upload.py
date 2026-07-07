@@ -30,6 +30,7 @@ class UrlPreviewRequest(BaseModel):
 class UploadConfirmRequest(BaseModel):
     preview_token: str
     context_note: str = ""
+    current_session_id: str = ""
 
 
 class UploadConfirmResponse(BaseModel):

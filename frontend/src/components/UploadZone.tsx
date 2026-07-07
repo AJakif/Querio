@@ -9,14 +9,17 @@ export type UploadState =
   | { phase: 'preview'; preview: UploadPreviewResponse }
   | { phase: 'loading' }
   | { phase: 'ready'; sessionId: string; rowCount: number; tableName: string }
+  | { phase: 'tearing-down' }
   | { phase: 'error'; message: string }
 
 interface UploadZoneProps {
   state: UploadState
   onStateChange: (state: UploadState) => void
+  currentSessionId?: string
+  onClearSession?: () => Promise<void>
 }
 
-export function UploadZone({ state, onStateChange }: UploadZoneProps) {
+export function UploadZone({ state, onStateChange, currentSessionId, onClearSession }: UploadZoneProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [urlInput, setUrlInput] = useState('')
 
@@ -80,7 +83,7 @@ export function UploadZone({ state, onStateChange }: UploadZoneProps) {
     onStateChange({ phase: 'loading' })
 
     try {
-      const result = await uploadConfirm(previewToken, contextNote)
+      const result = await uploadConfirm(previewToken, contextNote, currentSessionId)
       onStateChange({
         phase: 'ready',
         sessionId: result.session_id,
@@ -96,6 +99,14 @@ export function UploadZone({ state, onStateChange }: UploadZoneProps) {
   }
 
   function handleCancel() {
+    onStateChange({ phase: 'idle' })
+  }
+
+  async function handleReplace() {
+    if (onClearSession) {
+      onStateChange({ phase: 'tearing-down' })
+      await onClearSession()
+    }
     onStateChange({ phase: 'idle' })
   }
 
@@ -201,10 +212,18 @@ export function UploadZone({ state, onStateChange }: UploadZoneProps) {
         </p>
         <button
           className="upload-reset-btn"
-          onClick={() => onStateChange({ phase: 'idle' })}
+          onClick={handleReplace}
         >
           Upload a different file
         </button>
+      </div>
+    )
+  }
+
+  if (state.phase === 'tearing-down') {
+    return (
+      <div className="upload-zone uploading">
+        <p>Clearing current session...</p>
       </div>
     )
   }

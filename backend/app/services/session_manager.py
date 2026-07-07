@@ -57,18 +57,25 @@ class SessionManager:
     def get_preview(self, token: str) -> PreviewResult | None:
         return self._preview_store.get(token)
 
-    async def create_session_schema(self, preview_token: str, context_note: str = "") -> tuple[str, int]:
+    async def create_session_schema(self, preview_token: str, context_note: str = "", current_session_id: str = "") -> tuple[str, int]:
         preview = self._preview_store.get(preview_token)
         if preview is None:
             raise ValueError("Preview data not found or expired")
 
-        session_id = str(uuid.uuid4())
-        schema_name = f"session_{session_id.replace('-', '_')}"
-
         self._preview_store.remove(preview_token)
+
+        if current_session_id:
+            await self.drop_session_schema(current_session_id)
+            session_id = current_session_id
+        else:
+            session_id = str(uuid.uuid4())
+
+        schema_name = f"session_{session_id.replace('-', '_')}"
 
         if context_note:
             self._session_notes[session_id] = context_note
+        elif current_session_id and session_id in self._session_notes:
+            self._session_notes.pop(session_id, None)
 
         await _create_schema(schema_name)
         table_sql = _build_create_table_sql(schema_name, preview.columns)
@@ -85,6 +92,7 @@ class SessionManager:
                 "table": UPLOADED_TABLE_NAME,
                 "row_count": row_count,
                 "column_count": len(preview.columns),
+                "replaced": bool(current_session_id),
             },
         )
 
