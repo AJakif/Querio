@@ -10,6 +10,7 @@ from app.schemas.upload import (
     UploadConfirmRequest,
     UploadConfirmResponse,
     ColumnPreview,
+    ColumnStats,
 )
 from app.services.csv_ingestion import parse_csv, parse_json
 from app.services.session_manager import SessionManager
@@ -79,7 +80,7 @@ async def upload_preview(
         )
 
         return UploadPreviewResponse(
-            columns=[ColumnPreview(name=c.name, inferred_type=c.inferred_type) for c in preview.columns],
+            columns=[ColumnPreview(name=c.name, inferred_type=c.inferred_type, stats=ColumnStats(**c.stats)) for c in preview.columns],
             sample_rows=preview.sample_rows,
             total_rows=preview.total_rows,
             preview_token=preview_token,
@@ -140,7 +141,7 @@ async def upload_preview_from_url(
         )
 
         return UploadPreviewResponse(
-            columns=[ColumnPreview(name=c.name, inferred_type=c.inferred_type) for c in preview.columns],
+            columns=[ColumnPreview(name=c.name, inferred_type=c.inferred_type, stats=ColumnStats(**c.stats)) for c in preview.columns],
             sample_rows=preview.sample_rows,
             total_rows=preview.total_rows,
             preview_token=preview_token,

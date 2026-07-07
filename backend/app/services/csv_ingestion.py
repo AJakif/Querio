@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import re
+from collections import Counter
 from datetime import datetime
 from typing import Any
 
@@ -15,11 +16,13 @@ class InferredColumn:
     name: str
     inferred_type: str
     values: list[str]
+    stats: dict
 
     def __init__(self, name: str, values: list[str]):
         self.name = name
         self.values = values
         self.inferred_type = self._infer_type()
+        self.stats = self._compute_stats()
 
     def _infer_type(self) -> str:
         non_null = [v for v in self.values if v is not None and v.strip() != ""]
@@ -36,6 +39,38 @@ class InferredColumn:
             return "timestamp"
 
         return "text"
+
+    def _compute_stats(self) -> dict:
+        total = len(self.values)
+        non_null = [v for v in self.values if v is not None and v.strip() != ""]
+        null_count = total - len(non_null)
+        null_pct = round((null_count / total) * 100, 1) if total > 0 else 0.0
+
+        stats: dict[str, Any] = {
+            "null_percentage": null_pct,
+            "min_value": None,
+            "max_value": None,
+            "mean_value": None,
+            "top_values": None,
+        }
+
+        if self.inferred_type in ("integer", "numeric"):
+            numeric_vals: list[float] = []
+            for v in non_null:
+                try:
+                    numeric_vals.append(float(v))
+                except ValueError:
+                    pass
+            if numeric_vals:
+                stats["min_value"] = min(numeric_vals)
+                stats["max_value"] = max(numeric_vals)
+                stats["mean_value"] = round(sum(numeric_vals) / len(numeric_vals), 2)
+        else:
+            counter = Counter(non_null)
+            top = counter.most_common(5)
+            stats["top_values"] = [{"value": v, "count": c} for v, c in top]
+
+        return stats
 
 
 class PreviewResult:

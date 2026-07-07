@@ -6,6 +6,33 @@ interface SchemaPreviewProps {
   onCancel: () => void
 }
 
+function StatsCell({ col }: { col: UploadPreviewResponse['columns'][number] }) {
+  const s = col.stats
+  if (col.inferred_type === 'integer' || col.inferred_type === 'numeric') {
+    const parts: string[] = []
+    if (s.min_value !== null) parts.push(`Min: ${s.min_value}`)
+    if (s.max_value !== null) parts.push(`Max: ${s.max_value}`)
+    if (s.mean_value !== null) parts.push(`Mean: ${s.mean_value}`)
+    return <span className="stats-numeric">{parts.join(' · ')}</span>
+  }
+
+  if (s.top_values && s.top_values.length > 0) {
+    return (
+      <span className="stats-top">
+        {s.top_values.map((t, i) => (
+          <span key={i} className="stats-top-item">
+            {t.value}
+            <span className="stats-top-count">{t.count}</span>
+            {i < s.top_values!.length - 1 && ', '}
+          </span>
+        ))}
+      </span>
+    )
+  }
+
+  return <span className="stats-empty">—</span>
+}
+
 export function SchemaPreview({ preview, onConfirm, onCancel }: SchemaPreviewProps) {
   return (
     <div className="schema-preview">
@@ -14,26 +41,32 @@ export function SchemaPreview({ preview, onConfirm, onCancel }: SchemaPreviewPro
         {preview.total_rows.toLocaleString()} rows &middot; {preview.columns.length} columns
       </p>
 
-      <table className="schema-table">
-        <thead>
-          <tr>
-            <th>Column</th>
-            <th>Inferred Type</th>
-          </tr>
-        </thead>
-        <tbody>
-          {preview.columns.map((col) => (
-            <tr key={col.name}>
-              <td className="schema-col-name">{col.name}</td>
-              <td>
-                <span className={`schema-type-badge schema-type-${col.inferred_type}`}>
-                  {col.inferred_type}
-                </span>
-              </td>
+      <div className="schema-table-wrapper">
+        <table className="schema-table">
+          <thead>
+            <tr>
+              <th>Column</th>
+              <th>Type</th>
+              <th>Null %</th>
+              <th>Distribution</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {preview.columns.map((col) => (
+              <tr key={col.name}>
+                <td className="schema-col-name">{col.name}</td>
+                <td>
+                  <span className={`schema-type-badge schema-type-${col.inferred_type}`}>
+                    {col.inferred_type}
+                  </span>
+                </td>
+                <td className="stats-null-pct">{col.stats.null_percentage}%</td>
+                <td className="stats-dist"><StatsCell col={col} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       <details className="schema-sample-details">
         <summary>Sample rows ({preview.sample_rows.length})</summary>

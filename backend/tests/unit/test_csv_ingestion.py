@@ -174,6 +174,103 @@ class TestParseJsonNoFlattening:
         assert [c.name for c in result.columns] == ["a", "b"]
 
 
+class TestColumnStats:
+    def test_numeric_stats(self):
+        content = b"value\n10\n20\n30\n40\n50"
+        result = parse_csv(content)
+        col = result.columns[0]
+        assert col.inferred_type == "integer"
+        assert col.stats["null_percentage"] == 0.0
+        assert col.stats["min_value"] == 10.0
+        assert col.stats["max_value"] == 50.0
+        assert col.stats["mean_value"] == 30.0
+        assert col.stats["top_values"] is None
+
+    def test_numeric_with_nulls(self):
+        content = b"value,label\n10,a\n,b\n30,c\n,d\n50,e"
+        result = parse_csv(content)
+        col = result.columns[0]
+        assert col.stats["null_percentage"] == 40.0
+        assert col.stats["min_value"] == 10.0
+        assert col.stats["max_value"] == 50.0
+        assert col.stats["mean_value"] == 30.0
+
+    def test_numeric_no_nulls(self):
+        content = b"value\n10\n20\n30"
+        result = parse_csv(content)
+        col = result.columns[0]
+        assert col.stats["null_percentage"] == 0.0
+        assert col.stats["min_value"] == 10.0
+        assert col.stats["max_value"] == 30.0
+        assert col.stats["mean_value"] == 20.0
+
+    def test_text_top_values(self):
+        content = b"cat\napple\nbanana\napple\ncherry\nbanana\napple"
+        result = parse_csv(content)
+        col = result.columns[0]
+        assert col.inferred_type == "text"
+        assert col.stats["null_percentage"] == 0.0
+        assert col.stats["min_value"] is None
+        assert col.stats["max_value"] is None
+        assert col.stats["mean_value"] is None
+        top = col.stats["top_values"]
+        assert top is not None
+        assert top[0]["value"] == "apple"
+        assert top[0]["count"] == 3
+        assert top[1]["value"] == "banana"
+        assert top[1]["count"] == 2
+
+    def test_text_with_nulls(self):
+        content = b"name,val\napple,1\n,2\nbanana,3\n,4"
+        result = parse_csv(content)
+        col = result.columns[0]
+        assert col.inferred_type == "text"
+        assert col.stats["null_percentage"] == 50.0
+
+    def test_json_all_nulls_empty_top_values(self):
+        content = json.dumps([{"a": None}, {"a": None}, {"a": None}]).encode()
+        result = parse_json(content)
+        col = result.columns[0]
+        assert col.stats["null_percentage"] == 100.0
+        assert col.stats["top_values"] == []
+
+    def test_date_column_no_numeric_stats(self):
+        content = b"dt\n2024-01-01\n2024-01-02\n2024-01-03"
+        result = parse_csv(content)
+        col = result.columns[0]
+        assert col.inferred_type == "date"
+        assert col.stats["min_value"] is None
+        assert col.stats["max_value"] is None
+        assert col.stats["mean_value"] is None
+        top = col.stats["top_values"]
+        assert top is not None
+        assert len(top) == 3
+
+    def test_top_values_max_five(self):
+        values = "\n".join([f"val{i}" for i in range(10)] * 3)
+        content = f"x\n{values}".encode()
+        result = parse_csv(content)
+        col = result.columns[0]
+        assert len(col.stats["top_values"]) == 5
+
+    def test_json_numeric_stats(self):
+        content = json.dumps([{"a": 10}, {"a": 20}, {"a": 30}]).encode()
+        result = parse_json(content)
+        col = result.columns[0]
+        assert col.stats["min_value"] == 10.0
+        assert col.stats["max_value"] == 30.0
+        assert col.stats["mean_value"] == 20.0
+
+    def test_json_text_top_values(self):
+        content = json.dumps([{"x": "a"}, {"x": "b"}, {"x": "a"}]).encode()
+        result = parse_json(content)
+        col = result.columns[0]
+        top = col.stats["top_values"]
+        assert top is not None
+        assert top[0]["value"] == "a"
+        assert top[0]["count"] == 2
+
+
 class TestParseCsvNoFlattening:
     def test_csv_unchanged(self):
         content = b"a,b\n1,x\n2,y"

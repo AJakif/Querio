@@ -418,7 +418,6 @@ body {
 .schema-table {
   width: 100%;
   border-collapse: collapse;
-  margin-bottom: 12px;
 }
 
 .schema-table th,
@@ -437,9 +436,55 @@ body {
   letter-spacing: 0.5px;
 }
 
+.schema-table-wrapper {
+  overflow-x: auto;
+  margin-bottom: 12px;
+}
+
 .schema-col-name {
   font-family: monospace;
   font-weight: 600;
+  white-space: nowrap;
+}
+
+.stats-null-pct {
+  font-family: monospace;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.stats-dist {
+  font-size: 13px;
+  max-width: 320px;
+}
+
+.stats-numeric {
+  font-family: monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.stats-top {
+  display: inline;
+  line-height: 1.6;
+}
+
+.stats-top-item {
+  white-space: nowrap;
+}
+
+.stats-top-count {
+  display: inline-block;
+  margin-left: 2px;
+  padding: 0 4px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  font-size: 10px;
+  color: #6b7280;
+}
+
+.stats-empty {
+  color: #9ca3af;
 }
 
 .schema-type-badge {

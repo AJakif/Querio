@@ -2,9 +2,18 @@ from pydantic import BaseModel
 from typing import Any
 
 
+class ColumnStats(BaseModel):
+    null_percentage: float
+    min_value: Any
+    max_value: Any
+    mean_value: float | None
+    top_values: list[dict[str, Any]] | None
+
+
 class ColumnPreview(BaseModel):
     name: str
     inferred_type: str
+    stats: ColumnStats
 
 
 class UploadPreviewResponse(BaseModel):

@@ -1,8 +1,17 @@
 const BASE_URL = '/api/upload'
 
+export interface ColumnStats {
+  null_percentage: number
+  min_value: number | null
+  max_value: number | null
+  mean_value: number | null
+  top_values: { value: string; count: number }[] | null
+}
+
 export interface ColumnPreview {
   name: string
   inferred_type: string
+  stats: ColumnStats
 }
 
 export interface UploadPreviewResponse {
