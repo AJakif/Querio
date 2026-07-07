@@ -99,6 +99,8 @@ def parse_json(content: bytes, sample_size: int = 10) -> PreviewResult:
         if not isinstance(item, dict):
             raise ValueError("All elements in the JSON array must be objects")
 
+    data = [_flatten_item(item) for item in data]
+
     all_keys: list[str] = []
     seen: set[str] = set()
     for item in data:
@@ -220,3 +222,21 @@ def _value_to_str(value: Any) -> str:
     if isinstance(value, (dict, list)):
         return json.dumps(value)
     return str(value)
+
+
+def _flatten_item(item: dict) -> dict:
+    flattened = {}
+    for key, value in item.items():
+        if isinstance(value, dict):
+            for sub_key, sub_value in value.items():
+                if isinstance(sub_value, dict):
+                    raise ValueError(
+                        f"JSON objects nested more than one level deep are not supported. "
+                        f"Found nested object at '{key}.{sub_key}'. "
+                        f"Please flatten your data to at most one level of nesting."
+                    )
+                new_key = f"{key}_{sub_key}"
+                flattened[new_key] = sub_value
+        else:
+            flattened[key] = value
+    return flattened
