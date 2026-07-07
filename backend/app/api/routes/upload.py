@@ -20,6 +20,8 @@ from app.services.ssrf_guard import fetch_url, SSRFError
 router = APIRouter()
 logger = get_logger("api.upload")
 
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024
+
 
 def get_session_manager() -> SessionManager:
     from app.main import app_state
@@ -56,11 +58,10 @@ async def upload_preview(
         content = await file.read()
         if len(content) == 0:
             raise HTTPException(status_code=400, detail="Uploaded file is empty")
-        max_size = 50 * 1024 * 1024
-        if len(content) > max_size:
+        if len(content) > MAX_UPLOAD_SIZE:
             raise HTTPException(
                 status_code=400,
-                detail=f"File too large. Maximum size is {max_size // (1024 * 1024)}MB.",
+                detail=f"File too large. Maximum size is {MAX_UPLOAD_SIZE // (1024 * 1024)}MB.",
             )
 
         is_json = filename_lower.endswith(".json")
@@ -71,7 +72,7 @@ async def upload_preview(
         logger.info(
             "File preview generated",
             extra={
-                "filename": file.filename,
+                "file_name": file.filename,
                 "file_type": "json" if is_json else "csv",
                 "columns": len(preview.columns),
                 "total_rows": preview.total_rows,
@@ -86,11 +87,13 @@ async def upload_preview(
             preview_token=preview_token,
         )
 
+    except HTTPException:
+        raise
     except ValueError as exc:
-        logger.warning("File parsing failed", extra={"filename": file.filename, "error": str(exc)})
+        logger.warning("File parsing failed", extra={"file_name": file.filename, "error": str(exc)})
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        logger.exception("Unexpected error during file preview", extra={"filename": file.filename})
+        logger.exception("Unexpected error during file preview", extra={"file_name": file.filename})
         raise HTTPException(status_code=500, detail="Failed to process file")
 
 
