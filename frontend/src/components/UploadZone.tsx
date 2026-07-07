@@ -76,11 +76,11 @@ export function UploadZone({ state, onStateChange }: UploadZoneProps) {
     }
   }
 
-  async function handleConfirm(previewToken: string) {
+  async function handleConfirm(previewToken: string, contextNote: string) {
     onStateChange({ phase: 'loading' })
 
     try {
-      const result = await uploadConfirm(previewToken)
+      const result = await uploadConfirm(previewToken, contextNote)
       onStateChange({
         phase: 'ready',
         sessionId: result.session_id,

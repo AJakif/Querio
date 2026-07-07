@@ -46,6 +46,7 @@ class AskService:
         clarification_answer: str | None = None,
         request_id: str | None = None,
         session_schema: str | None = None,
+        context_note: str = "",
     ) -> Answer | ClarifyingQuestion:
         request_id = request_id or str(uuid.uuid4())
         started_at = time.perf_counter()
@@ -60,8 +61,13 @@ class AskService:
                 "selected_provider": settings.effective_model_provider,
                 "has_clarification_answer": clarification_answer is not None,
                 "session_schema": session_schema,
+                "has_context_note": bool(context_note),
             },
         )
+
+        if context_note:
+            question = f"[Dataset context: {context_note}]\n\n{question}"
+
         if conversation_id and clarification_answer is not None:
             ctx = self._conversation_store.get(conversation_id)
             if ctx is None:

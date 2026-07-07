@@ -555,6 +555,39 @@ body {
   font-size: 12px;
 }
 
+.schema-context-note {
+  margin-bottom: 16px;
+}
+
+.schema-context-note-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--color-text);
+}
+
+.schema-context-note-optional {
+  font-weight: 400;
+  color: var(--color-text-secondary);
+}
+
+.schema-context-note-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  resize: vertical;
+  transition: border-color 0.15s;
+}
+
+.schema-context-note-input:focus {
+  border-color: var(--color-primary);
+}
+
 .schema-preview-actions {
   display: flex;
   gap: 8px;

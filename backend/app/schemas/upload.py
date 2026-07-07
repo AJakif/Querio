@@ -29,6 +29,7 @@ class UrlPreviewRequest(BaseModel):
 
 class UploadConfirmRequest(BaseModel):
     preview_token: str
+    context_note: str = ""
 
 
 class UploadConfirmResponse(BaseModel):

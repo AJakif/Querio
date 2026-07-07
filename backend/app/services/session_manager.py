@@ -49,6 +49,7 @@ class PreviewStore:
 class SessionManager:
     def __init__(self, preview_store: PreviewStore | None = None):
         self._preview_store = preview_store or PreviewStore()
+        self._session_notes: dict[str, str] = {}
 
     def store_preview(self, result: PreviewResult) -> str:
         return self._preview_store.store(result)
@@ -56,7 +57,7 @@ class SessionManager:
     def get_preview(self, token: str) -> PreviewResult | None:
         return self._preview_store.get(token)
 
-    async def create_session_schema(self, preview_token: str) -> tuple[str, int]:
+    async def create_session_schema(self, preview_token: str, context_note: str = "") -> tuple[str, int]:
         preview = self._preview_store.get(preview_token)
         if preview is None:
             raise ValueError("Preview data not found or expired")
@@ -65,6 +66,9 @@ class SessionManager:
         schema_name = f"session_{session_id.replace('-', '_')}"
 
         self._preview_store.remove(preview_token)
+
+        if context_note:
+            self._session_notes[session_id] = context_note
 
         await _create_schema(schema_name)
         table_sql = _build_create_table_sql(schema_name, preview.columns)
@@ -86,8 +90,12 @@ class SessionManager:
 
         return session_id, row_count
 
+    def get_session_note(self, session_id: str) -> str:
+        return self._session_notes.get(session_id, "")
+
     async def drop_session_schema(self, session_id: str) -> None:
         schema_name = _session_id_to_schema(session_id)
+        self._session_notes.pop(session_id, None)
         try:
             await _execute_ddl(f"DROP SCHEMA IF EXISTS {_quote_ident(schema_name)} CASCADE")
             logger.info("Dropped session schema", extra={"session_id": session_id, "schema": schema_name})

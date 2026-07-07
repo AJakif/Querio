@@ -164,7 +164,7 @@ async def upload_confirm(
     session_manager: SessionManager = Depends(get_session_manager),
 ):
     try:
-        session_id, row_count = await session_manager.create_session_schema(body.preview_token)
+        session_id, row_count = await session_manager.create_session_schema(body.preview_token, context_note=body.context_note)
 
         logger.info(
             "Upload confirmed and data loaded",

@@ -58,6 +58,18 @@ class FakeSqlGeneratorClarifyAnswer(FakeSqlGenerator):
         )
 
 
+class FakeSqlGeneratorCapturing(FakeSqlGenerator):
+    def __init__(self):
+        self.last_question: str = ""
+
+    async def generate(self, question: str, **kwargs) -> GeneratedSQL:
+        self.last_question = question
+        return GeneratedSQL(
+            sql="SELECT COUNT(*) FROM uploaded_data",
+            explanation="Counting rows.",
+        )
+
+
 class FakeSqlGeneratorRepairing(FakeSqlGenerator):
     def __init__(self):
         self.calls: list[str] = []
@@ -272,6 +284,56 @@ class TestAskService:
         )
         assert isinstance(result, Answer)
         assert "conversation" in result.text.lower() or "try again" in result.text.lower()
+
+    @pytest.mark.asyncio
+    async def test_context_note_is_prepended_to_question(self, schema_repo, query_repo):
+        gen = FakeSqlGeneratorCapturing()
+        from app.services.ask_service import AskService
+        service = AskService(
+            sql_generator=gen,
+            schema_repository=schema_repo,
+            query_repository=query_repo,
+        )
+        query_repo.set_return_rows([{"cnt": 50}])
+        result = await service.answer(
+            question="How many records?",
+            context_note="amt_2 is refund amount in USD",
+        )
+        assert isinstance(result, Answer)
+        assert "Dataset context: amt_2 is refund amount in USD" in gen.last_question
+        assert "How many records?" in gen.last_question
+
+    @pytest.mark.asyncio
+    async def test_context_note_blank_does_not_alter_question(self, schema_repo, query_repo):
+        gen = FakeSqlGeneratorCapturing()
+        from app.services.ask_service import AskService
+        service = AskService(
+            sql_generator=gen,
+            schema_repository=schema_repo,
+            query_repository=query_repo,
+        )
+        query_repo.set_return_rows([{"cnt": 50}])
+        result = await service.answer("How many records?", context_note="")
+        assert isinstance(result, Answer)
+        assert gen.last_question == "How many records?"
+
+    @pytest.mark.asyncio
+    async def test_context_note_helps_ambiguous_question(self, schema_repo, query_repo):
+        gen = FakeSqlGeneratorCapturing()
+        from app.services.ask_service import AskService
+        service = AskService(
+            sql_generator=gen,
+            schema_repository=schema_repo,
+            query_repository=query_repo,
+        )
+        query_repo.set_return_rows([{"cnt": 100}])
+        result = await service.answer(
+            question="What is the total amount?",
+            context_note="amount is in USD and refers to refund values",
+        )
+        assert isinstance(result, Answer)
+        assert "Dataset context: amount is in USD" in gen.last_question
+        assert "total amount" in gen.last_question
 
     @pytest.mark.asyncio
     async def test_schema_error_triggers_single_sql_repair_attempt(self, schema_repo):

@@ -1,8 +1,9 @@
+import { useState } from 'react'
 import type { UploadPreviewResponse } from '../api/uploadApi'
 
 interface SchemaPreviewProps {
   preview: UploadPreviewResponse
-  onConfirm: (previewToken: string) => void
+  onConfirm: (previewToken: string, contextNote: string) => void
   onCancel: () => void
 }
 
@@ -34,6 +35,8 @@ function StatsCell({ col }: { col: UploadPreviewResponse['columns'][number] }) {
 }
 
 export function SchemaPreview({ preview, onConfirm, onCancel }: SchemaPreviewProps) {
+  const [contextNote, setContextNote] = useState('')
+
   return (
     <div className="schema-preview">
       <h3 className="schema-preview-title">Schema Preview</h3>
@@ -92,10 +95,24 @@ export function SchemaPreview({ preview, onConfirm, onCancel }: SchemaPreviewPro
         </div>
       </details>
 
+      <div className="schema-context-note">
+        <label className="schema-context-note-label" htmlFor="context-note">
+          Dataset description <span className="schema-context-note-optional">(optional)</span>
+        </label>
+        <textarea
+          id="context-note"
+          className="schema-context-note-input"
+          placeholder='e.g. "amt_2 is refund amount in USD"'
+          rows={2}
+          value={contextNote}
+          onChange={(e) => setContextNote(e.target.value)}
+        />
+      </div>
+
       <div className="schema-preview-actions">
         <button
           className="schema-confirm-btn"
-          onClick={() => onConfirm(preview.preview_token)}
+          onClick={() => onConfirm(preview.preview_token, contextNote)}
         >
           Confirm &amp; Load Data
         </button>

@@ -59,11 +59,11 @@ export async function uploadPreviewFromUrl(url: string): Promise<UploadPreviewRe
   return response.json() as Promise<UploadPreviewResponse>
 }
 
-export async function uploadConfirm(previewToken: string): Promise<UploadConfirmResponse> {
+export async function uploadConfirm(previewToken: string, contextNote?: string): Promise<UploadConfirmResponse> {
   const response = await fetch(`${BASE_URL}/confirm`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ preview_token: previewToken }),
+    body: JSON.stringify({ preview_token: previewToken, context_note: contextNote ?? '' }),
   })
 
   if (!response.ok) {
