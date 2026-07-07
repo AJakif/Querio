@@ -10,6 +10,8 @@ This is a portfolio project built to demonstrate agentic AI engineering: guardra
 
 ---
 
+<img src="./Images/mock_1.jpg" alt="Querio Blueprint workbench mockup showing the calm chat shell alongside the technical workbench pane with reasoning trace, SQL, and chart" style="width: 100%; max-width: 900px; border-radius: 12px; margin: 24px 0; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
+
 ## Why this project exists
 
 Most "AI chatbot" portfolio demos do RAG over documents. Querio does something harder: it generates and safely executes real SQL against a live relational database. That means correctness, guardrails, and ambiguity handling matter far more than retrieval quality — and that's the actual engineering problem this project is built to show off.
