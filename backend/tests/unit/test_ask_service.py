@@ -94,7 +94,13 @@ class FakeQueryRepositorySchemaErrorThenSuccess:
 
     async def execute(self, sql: str) -> list[dict]:
         self.calls.append(sql)
-        if not self._failed:
+        # Only fail on the actual broken SELECT, not on EXPLAIN or DISTINCT queries
+        # the validator issues. The validator's calls use these prefixes.
+        is_instrumentation = (
+            sql.strip().upper().startswith("EXPLAIN")
+            or sql.strip().upper().startswith("SELECT DISTINCT")
+        )
+        if not is_instrumentation and not self._failed:
             self._failed = True
             raise RuntimeError('column f.product_id does not exist')
         return [{"order_id": "ORD001", "total_payment_value": 123.45}]
@@ -142,7 +148,9 @@ class TestAskService:
     async def test_answer_includes_query_result(self, service):
         result = await service.answer("How many orders?")
         assert isinstance(result, Answer)
-        assert "10" in result.text
+        # Slice 3: text derives from answer_spec.restatement; raw value is in headline
+        assert result.answer_spec is not None
+        assert result.answer_spec.headline.value == "10"
 
     @pytest.mark.asyncio
     async def test_clarifying_question_returned_when_ambiguous(self, schema_repo, query_repo):
@@ -200,8 +208,9 @@ class TestAskService:
             result = await service.answer("Drop something")
         assert isinstance(result, Answer)
         assert "look up data" not in result.text.lower()
-        assert len(query_repo.executed_sql) == 1
-        assert "DROP" in query_repo.executed_sql[0]
+        # Validator adds an EXPLAIN call before the real execution; assert the
+        # DROP statement was actually dispatched (at least once).
+        assert any("DROP" in s for s in query_repo.executed_sql)
 
     @pytest.mark.asyncio
     async def test_multi_table_join_returns_joined_data(self, schema_repo, query_repo):
@@ -218,8 +227,9 @@ class TestAskService:
         )
         result = await service.answer("Show me orders with customer names")
         assert isinstance(result, Answer)
-        assert "Alice" in result.text
-        assert "Bob" in result.text
+        # Slice 3: text is now restatement, not raw rows; assert structural correctness
+        assert result.answer_spec is not None
+        assert result.answer_spec.restatement
         assert "JOIN" in result.sql.sql
         assert result.sql.explanation == "Joined orders with customers."
 
@@ -263,7 +273,9 @@ class TestAskService:
             clarification_answer="customers",
         )
         assert isinstance(result, Answer)
-        assert "25" in result.text
+        # Slice 3: raw value is in answer_spec.headline, not result.text
+        assert result.answer_spec is not None
+        assert result.answer_spec.headline.value == "25"
         assert result.conversation_id is not None
 
     @pytest.mark.asyncio
@@ -350,7 +362,9 @@ class TestAskService:
         result = await service.answer("What were the top 5 products by revenue last quarter?")
 
         assert isinstance(result, Answer)
-        assert "123.45" in result.text
+        # Slice 3: text is restatement; verify repair happened and answer_spec is populated
+        assert result.answer_spec is not None
         assert len(sql_gen.calls) == 2
         assert "The previous SQL failed" in sql_gen.calls[1]
-        assert len(query_repo.calls) == 2
+        # Validator issues EXPLAIN/DISTINCT calls in addition to the two main executions.
+        assert len(query_repo.calls) >= 2

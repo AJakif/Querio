@@ -2,7 +2,11 @@ import time
 import uuid
 from numbers import Number
 
-from app.domain.models import Answer, SqlQuery, ClarifyingQuestion, ChartSpec, ChartType
+from app.agent.aggregator import Aggregator, FakeAggregator
+from app.agent.contracts import PlanResult
+from app.agent.planner import FakePlanner, Planner
+from app.agent.validator import Validator
+from app.domain.models import Answer, SqlQuery, ClarifyingQuestion, ChartSpec, ChartType, ValidationResult
 from app.repositories.base import SchemaRepository, QueryRepository
 from app.agent.agent import SqlGenerator, GeneratedSQL
 from app.guardrails.sql_validator import validate_sql
@@ -21,11 +25,17 @@ class AskService:
         schema_repository: SchemaRepository,
         query_repository: QueryRepository,
         conversation_store: ConversationStore | None = None,
+        planner: Planner | None = None,
+        validator: Validator | None = None,
+        aggregator: Aggregator | None = None,
     ):
         self._sql_generator = sql_generator
         self._schema_repo = schema_repository
         self._query_repo = query_repository
         self._conversation_store = conversation_store or ConversationStore()
+        self._planner = planner or FakePlanner()
+        self._validator = validator or Validator()
+        self._aggregator = aggregator or FakeAggregator()
 
     async def _session_schema_repo(self, session_schema: str) -> SchemaRepository | None:
         if not session_schema:
@@ -68,6 +78,16 @@ class AskService:
         if context_note:
             question = f"[Dataset context: {context_note}]\n\n{question}"
 
+        plan_result = await self._planner.plan(question, schema_repo_override=schema_repo)
+        logger.debug(
+            "Planner completed",
+            extra={
+                "request_id": request_id,
+                "ambiguity_score": plan_result.ambiguity_score,
+                "unresolved_count": len(plan_result.unresolved_terms),
+            },
+        )
+
         if conversation_id and clarification_answer is not None:
             ctx = self._conversation_store.get(conversation_id)
             if ctx is None:
@@ -78,7 +98,7 @@ class AskService:
                 return Answer(text="Sorry, I couldn't find that conversation. Please try asking your question again.")
             self._conversation_store.complete(conversation_id)
             combined_question = _combine_clarification(ctx.original_question, clarification_answer)
-            return await self._execute_answer(combined_question, conversation_id, request_id, started_at, schema_repo=schema_repo, query_repo=query_repo)
+            return await self._execute_answer(combined_question, conversation_id, request_id, started_at, plan_result=plan_result, schema_repo=schema_repo, query_repo=query_repo)
 
         generated = await self._sql_generator.generate(question, schema_repo_override=schema_repo)
 
@@ -98,7 +118,7 @@ class AskService:
                 conversation_id=conv_id,
             )
 
-        return await self._do_execute(generated, question, conversation_id, request_id, started_at, query_repo=query_repo, schema_repo=schema_repo)
+        return await self._do_execute(generated, question, conversation_id, request_id, started_at, plan_result=plan_result, query_repo=query_repo, schema_repo=schema_repo)
 
     async def _do_execute(
         self,
@@ -110,6 +130,7 @@ class AskService:
         allow_repair: bool = True,
         query_repo: QueryRepository | None = None,
         schema_repo: SchemaRepository | None = None,
+        plan_result: PlanResult | None = None,
     ) -> Answer | ClarifyingQuestion:
         effective_query_repo = query_repo or self._query_repo
         effective_schema_repo = schema_repo or self._schema_repo
@@ -125,11 +146,20 @@ class AskService:
                     "execution_time_ms": _elapsed_ms(started_at),
                 },
             )
-            return Answer(text=error, conversation_id=conversation_id)
+            return Answer(text=error, conversation_id=conversation_id, plan=plan_result)
+
+        effective_sql = safe_sql or generated.sql
+        validation_result: ValidationResult | None = None
+        try:
+            validation_result = await self._validator.validate(
+                effective_sql, effective_schema_repo, effective_query_repo
+            )
+        except Exception as exc:
+            logger.warning("Validator failed, continuing without validation", extra={"error": str(exc)})
 
         logger.debug("Executing SQL", extra={"request_id": request_id, "conversation_id": conversation_id, "sql": safe_sql})
         try:
-            rows = await effective_query_repo.execute(safe_sql or generated.sql)
+            rows = await effective_query_repo.execute(effective_sql)
         except Exception as exc:
             if allow_repair and _is_retriable_schema_error(exc):
                 logger.warning(
@@ -162,6 +192,7 @@ class AskService:
                     allow_repair=False,
                     query_repo=query_repo,
                     schema_repo=schema_repo,
+                    plan_result=plan_result,
                 )
 
             logger.exception(
@@ -177,6 +208,8 @@ class AskService:
             return Answer(
                 text="Sorry, I couldn't safely answer that request. Please try rephrasing it.",
                 conversation_id=conversation_id,
+                plan=plan_result,
+                validation=validation_result,
             )
         logger.info(
             "SQL executed",
@@ -198,15 +231,40 @@ class AskService:
                 text="The query returned no results.",
                 sql=SqlQuery(sql=generated.sql, explanation=generated.explanation),
                 conversation_id=conversation_id,
+                plan=plan_result,
+                validation=validation_result,
             )
 
-        answer_text = _format_answer(rows, generated)
+        answer_spec = None
+        try:
+            answer_spec = await self._aggregator.aggregate(
+                question, rows, plan_result or PlanResult()
+            )
+        except Exception as exc:
+            logger.warning("Aggregator failed, continuing without answer_spec", extra={"error": str(exc)})
+
+        if answer_spec is not None:
+            try:
+                answer_spec, _dropped = self._validator.verify_claims(answer_spec, rows)
+            except Exception as exc:
+                logger.warning(
+                    "Claim verification failed, continuing with unverified claims",
+                    extra={"error": str(exc)},
+                )
+
+        # Derive legacy text from AnswerSpec for frontend compat; fall back to old formatter
+        answer_text = (
+            answer_spec.restatement if answer_spec is not None else _format_answer(rows, generated)
+        )
         chart = _build_chart(question, rows)
         return Answer(
             text=answer_text,
             chart=chart,
             sql=SqlQuery(sql=generated.sql, explanation=generated.explanation),
             conversation_id=conversation_id,
+            plan=plan_result,
+            validation=validation_result,
+            answer_spec=answer_spec,
         )
 
     async def _execute_answer(
@@ -215,11 +273,12 @@ class AskService:
         conversation_id: str,
         request_id: str | None = None,
         started_at: float | None = None,
+        plan_result: PlanResult | None = None,
         schema_repo: SchemaRepository | None = None,
         query_repo: QueryRepository | None = None,
     ) -> Answer | ClarifyingQuestion:
         generated = await self._sql_generator.generate(question, schema_repo_override=schema_repo)
-        return await self._do_execute(generated, question, conversation_id, request_id, started_at, query_repo=query_repo, schema_repo=schema_repo)
+        return await self._do_execute(generated, question, conversation_id, request_id, started_at, plan_result=plan_result, query_repo=query_repo, schema_repo=schema_repo)
 
 
 def _format_answer(rows: list[dict], generated: GeneratedSQL) -> str:
