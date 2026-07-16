@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "model": "sonnet",
+  "availableModels": [
+    "sonnet",
+    "opus",
+    "haiku",
+    "opusplan"
+  ],
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(/secrets/**)",
+      "Read(./credentials/**)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)",
+      "Read(./.venv/**)",
+      "Read(./**/__pycache__/**)",
+      "Read(./**/*.pyc)",
+      "Read(./logs/**)",
+      "Read(./load_test_results/**)",
+      "Read(./tmp/**)",
+      "Read(./node_modules/**)",
+      "Read(./.claude/worktrees/**)",
+      "Read(./transcripts/**)",
+      "Read(./processed-transcripts/**)"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "clickup"
+  ],
+  "statusLine": {
+    "type": "command",
+    "command": "python .claude/scripts/statusline.py",
+    "padding": 1
+  }
+}
