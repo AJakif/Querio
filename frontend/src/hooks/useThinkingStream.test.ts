@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { renderHook, waitFor, act } from '@testing-library/react'
+import { renderHook, act } from '@testing-library/react'
 import { useThinkingStream } from './useThinkingStream'
 import type { AskResponse } from '../types/api'
 
@@ -23,10 +23,12 @@ function delay(ms: number) {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.useRealTimers()
 })
 
 describe('useThinkingStream', () => {
   it('reveals the trace agent-by-agent for a slow stream', async () => {
+    vi.useFakeTimers()
     vi.mocked(streamAskQuestion).mockImplementation(async function* () {
       yield { type: 'step', stage: 'planner', detail: { ambiguity_score: 0.2 } }
       await delay(150)
@@ -37,14 +39,23 @@ describe('useThinkingStream', () => {
 
     const { result } = renderHook(() => useThinkingStream())
 
-    let promise: Promise<AskResponse>
+    let promise!: Promise<AskResponse>
     act(() => {
       promise = result.current.run('How many orders?')
     })
 
-    await waitFor(() => expect(result.current.trace?.steps.length).toBeGreaterThan(0), { timeout: 1000 })
+    // Reveal timer fires at 300ms, before the 350ms-away `done` event. Fake
+    // timers drive both the reveal threshold and the mock stream's delays
+    // deterministically, so there is no real-clock race here.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(310)
+    })
+    expect(result.current.trace?.steps.length).toBeGreaterThan(0)
 
-    const resolved = await act(async () => promise)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100)
+    })
+    const resolved = await promise
     expect(resolved).toEqual(ANSWER)
     expect(result.current.trace).toBeNull()
   })
