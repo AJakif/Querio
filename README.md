@@ -65,6 +65,7 @@ Most "AI chatbot" portfolio demos do RAG over documents. Querio does something h
 
 | Document | What it covers |
 |---|---|
+| [`CONTRIBUTING.md`](./CONTRIBUTING.md) | How to contribute — branching, testing, commit conventions, code of conduct |
 | [`ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | System architecture, tech stack, repo tree |
 | [`SETUP.md`](./docs/SETUP.md) | Full setup guide, env config, logging, troubleshooting |
 | [`DATASET.md`](./docs/DATASET.md) | Olist dataset, raw/marts schemas, data pipeline, Airflow refresh |
