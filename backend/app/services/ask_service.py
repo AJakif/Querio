@@ -77,10 +77,14 @@ class AskService:
         session_schema: str | None = None,
         context_note: str = "",
         on_step: "OnStep | None" = None,
+        schema_repo_override: SchemaRepository | None = None,
     ) -> Answer | ClarifyingQuestion:
         request_id = request_id or str(uuid.uuid4())
         started_at = time.perf_counter()
-        schema_repo = await self._session_schema_repo(session_schema) if session_schema else None
+        if schema_repo_override is not None:
+            schema_repo: SchemaRepository | None = schema_repo_override
+        else:
+            schema_repo = await self._session_schema_repo(session_schema) if session_schema else None
         query_repo = await self._session_query_repo(session_schema) if session_schema else None
         logger.info(
             "Processing ask request",

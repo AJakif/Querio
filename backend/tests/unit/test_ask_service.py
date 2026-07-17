@@ -70,6 +70,23 @@ class FakeSqlGeneratorCapturing(FakeSqlGenerator):
         )
 
 
+class FakeSqlGeneratorCapturingSchemaTables(FakeSqlGenerator):
+    """Records the table names visible via schema_repo_override, so a test can
+    assert the generator actually had visibility into a combined schema."""
+
+    def __init__(self):
+        self.seen_tables: list[str] = []
+
+    async def generate(self, question: str, **kwargs) -> GeneratedSQL:
+        schema_repo_override = kwargs.get("schema_repo_override")
+        if schema_repo_override is not None:
+            self.seen_tables = await schema_repo_override.get_tables()
+        return GeneratedSQL(
+            sql="SELECT COUNT(*) FROM uploaded_data",
+            explanation="Counting rows.",
+        )
+
+
 class FakeSqlGeneratorRepairing(FakeSqlGenerator):
     def __init__(self):
         self.calls: list[str] = []
@@ -346,6 +363,34 @@ class TestAskService:
         assert isinstance(result, Answer)
         assert "Dataset context: amount is in USD" in gen.last_question
         assert "total amount" in gen.last_question
+
+    @pytest.mark.asyncio
+    async def test_schema_repo_override_gives_visibility_into_both_schemas(self, query_repo):
+        """Regression for Epic 8 Slice 16 bug: when a session has a detected
+        cross-dataset join key, the SQL generator must see the uploaded session's
+        table AND the seed schema's tables (qualified), not just the session's own
+        table -- otherwise cross-dataset suggestion chips ask unanswerable questions."""
+        from app.repositories.combined_schema_repository import CombinedSchemaRepository
+        from app.services.ask_service import AskService
+
+        session_repo = InMemorySchemaRepository()  # stands in for the upload session's schema
+        seed_repo = InMemorySchemaRepository()  # stands in for the seed `marts` schema
+        combined = CombinedSchemaRepository(primary=session_repo, secondary=seed_repo, secondary_prefix="marts")
+
+        gen = FakeSqlGeneratorCapturingSchemaTables()
+        service = AskService(
+            sql_generator=gen,
+            schema_repository=session_repo,
+            query_repository=query_repo,
+        )
+
+        await service.answer(
+            question="How many records match on customer_id?",
+            schema_repo_override=combined,
+        )
+
+        assert "customers" in gen.seen_tables  # primary/session tables stay unqualified
+        assert "marts.orders" in gen.seen_tables  # secondary/seed tables are qualified
 
     @pytest.mark.asyncio
     async def test_schema_error_triggers_single_sql_repair_attempt(self, schema_repo):

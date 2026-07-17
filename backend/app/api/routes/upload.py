@@ -214,6 +214,9 @@ async def upload_confirm(
                 extra={"session_id": session_id, "error": str(exc)},
             )
 
+        if join_result.detected and join_result.column is not None and join_result.seed_table is not None:
+            session_manager.set_join_key(session_id, join_result.column, join_result.seed_table)
+
         return UploadConfirmResponse(
             session_id=session_id,
             table_name="uploaded_data",

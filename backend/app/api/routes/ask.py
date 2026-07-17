@@ -22,8 +22,11 @@ from app.schemas.ask import (
     FingerprintResponse,
     ValidationResultResponse,
 )
+from app.core.config import settings
 from app.services.ask_service import AskService
 from app.domain.models import Answer, ClarifyingQuestion
+from app.repositories.base import SchemaRepository
+from app.repositories.combined_schema_repository import CombinedSchemaRepository
 
 router = APIRouter()
 logger = get_logger("api.ask")
@@ -39,15 +42,23 @@ async def get_ask_service() -> AskService:
     return app_state.ask_service
 
 
-def _resolve_session(session_id: str | None) -> tuple[str | None, str]:
+def _resolve_session(session_id: str | None) -> tuple[str | None, str, SchemaRepository | None]:
     if not session_id:
-        return None, ""
+        return None, "", None
     session_schema = f"session_{session_id.replace('-', '_')}"
     from app.main import app_state
     context_note = ""
+    schema_repo_override: SchemaRepository | None = None
     if app_state is not None:
         context_note = app_state.session_manager.get_session_note(session_id)
-    return session_schema, context_note
+        join_key = app_state.session_manager.get_join_key(session_id)
+        if join_key is not None:
+            schema_repo_override = CombinedSchemaRepository(
+                primary=app_state.session_manager.get_schema_repo(session_id),
+                secondary=app_state.schema_repository,
+                secondary_prefix=settings.db_schema,
+            )
+    return session_schema, context_note, schema_repo_override
 
 
 def _sse_event(event: str, data: dict[str, Any]) -> str:
@@ -70,7 +81,7 @@ async def ask(
             "question": body.question,
         },
     )
-    session_schema, context_note = _resolve_session(body.session_id)
+    session_schema, context_note, schema_repo_override = _resolve_session(body.session_id)
 
     result = await asyncio.wait_for(
         service.answer(
@@ -80,6 +91,7 @@ async def ask(
             request_id=request_id,
             session_schema=session_schema,
             context_note=context_note,
+            schema_repo_override=schema_repo_override,
         ),
         timeout=ASK_TIMEOUT_SECONDS,
     )
@@ -106,7 +118,7 @@ async def ask_stream(
         "Received /ask/stream request",
         extra={"request_id": request_id, "conversation_id": conversation_id, "question": question},
     )
-    session_schema, context_note = _resolve_session(session_id)
+    session_schema, context_note, schema_repo_override = _resolve_session(session_id)
 
     queue: asyncio.Queue[tuple[str, dict[str, Any]]] = asyncio.Queue()
 
@@ -122,6 +134,7 @@ async def ask_stream(
             session_schema=session_schema,
             context_note=context_note,
             on_step=on_step,
+            schema_repo_override=schema_repo_override,
         )
 
     async def event_generator():
