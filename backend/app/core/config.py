@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     max_rows: int = 1000
     query_timeout_ms: int = 5000
     db_schema: str = "marts"
+    ambiguity_threshold: float = 0.6
+    scan_cost_threshold: int = 1_000_000
 
     model_config = SettingsConfigDict(
         env_file=str(PROJECT_ROOT / ".env"),

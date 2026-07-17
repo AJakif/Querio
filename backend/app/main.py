@@ -17,6 +17,9 @@ from app.repositories.memory.query_repository_memory import InMemoryQueryReposit
 from app.repositories.postgres.schema_repository_pg import PostgresSchemaRepository
 from app.repositories.postgres.query_repository_pg import PostgresQueryRepository
 from app.agent.agent import SqlGenerator, PydanticAiSqlGenerator, FakeSqlGenerator
+from app.agent.aggregator import Aggregator, PydanticAiAggregator, FakeAggregator
+from app.agent.planner import Planner, PydanticAiPlanner, FakePlanner
+from app.agent.validator import Validator
 
 
 @dataclass
@@ -59,6 +62,45 @@ def _build_sql_generator(schema_repo: SchemaRepository) -> SqlGenerator:
         )
     logger.warning("No LLM API keys configured, using fake SQL generator")
     return FakeSqlGenerator()
+
+
+def _build_planner(schema_repo: SchemaRepository) -> Planner:
+    if settings.effective_model_provider == "ollama" or settings.has_llm_api_key:
+        logger.info(
+            "Using provider-backed planner",
+            extra={
+                "model_provider": settings.effective_model_provider,
+                "model_name": settings.effective_model_name,
+            },
+        )
+        return PydanticAiPlanner(
+            settings.effective_model_name,
+            schema_repo,
+            openai_api_key=settings.openai_api_key.get_secret_value() if settings.openai_api_key else None,
+            anthropic_api_key=settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None,
+            ollama_base_url=settings.ollama_base_url,
+        )
+    logger.warning("No LLM API keys configured, using fake planner")
+    return FakePlanner()
+
+
+def _build_aggregator() -> Aggregator:
+    if settings.effective_model_provider == "ollama" or settings.has_llm_api_key:
+        logger.info(
+            "Using provider-backed aggregator",
+            extra={
+                "model_provider": settings.effective_model_provider,
+                "model_name": settings.effective_model_name,
+            },
+        )
+        return PydanticAiAggregator(
+            settings.effective_model_name,
+            openai_api_key=settings.openai_api_key.get_secret_value() if settings.openai_api_key else None,
+            anthropic_api_key=settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None,
+            ollama_base_url=settings.ollama_base_url,
+        )
+    logger.warning("No LLM API keys configured, using fake aggregator")
+    return FakeAggregator()
 
 
 async def _verify_schema_ready(schema_repo: SchemaRepository) -> None:
@@ -105,12 +147,18 @@ async def lifespan(app: FastAPI):
     schema_repo, query_repo = _build_repos()
     await _verify_schema_ready(schema_repo)
     sql_generator = _build_sql_generator(schema_repo)
+    planner = _build_planner(schema_repo)
+    aggregator = _build_aggregator()
+    validator = Validator()
     session_manager = SessionManager()
     app_state = AppState(
         ask_service=AskService(
             sql_generator=sql_generator,
             schema_repository=schema_repo,
             query_repository=query_repo,
+            planner=planner,
+            validator=validator,
+            aggregator=aggregator,
         ),
         session_manager=session_manager,
     )

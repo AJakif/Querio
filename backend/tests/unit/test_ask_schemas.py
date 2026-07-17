@@ -36,7 +36,17 @@ class TestAnswerResponse:
     def test_answer_response_serializes_to_json(self):
         resp = AnswerResponse(answer="hello")
         d = resp.model_dump()
-        assert d == {"type": "answer", "answer": "hello", "chart": None, "sql": None, "conversation_id": None}
+        assert d == {
+            "type": "answer",
+            "answer": "hello",
+            "chart": None,
+            "sql": None,
+            "conversation_id": None,
+            "plan": None,
+            "validation": None,
+            "answer_spec": None,
+            "dropped_claim_count": 0,
+        }
 
     def test_answer_response_can_include_conversation_id(self):
         resp = AnswerResponse(answer="result", conversation_id="conv-1")
