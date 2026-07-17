@@ -1,6 +1,7 @@
 import time
 import uuid
 from numbers import Number
+from typing import Any, Awaitable, Callable
 
 from app.agent.aggregator import Aggregator, FakeAggregator
 from app.agent.contracts import PlanResult
@@ -16,6 +17,16 @@ from app.core.logging import get_logger
 
 
 logger = get_logger("ask_service")
+
+# Invoked after each pipeline stage completes with (stage_name, detail). Purely an
+# observation hook for the transport layer (e.g. SSE progress streaming) — AskService
+# stays transport-agnostic and never imports anything HTTP/SSE related.
+OnStep = Callable[[str, dict[str, Any]], Awaitable[None]]
+
+
+async def _emit(on_step: "OnStep | None", stage: str, detail: dict[str, Any]) -> None:
+    if on_step is not None:
+        await on_step(stage, detail)
 
 
 class AskService:
@@ -57,6 +68,7 @@ class AskService:
         request_id: str | None = None,
         session_schema: str | None = None,
         context_note: str = "",
+        on_step: "OnStep | None" = None,
     ) -> Answer | ClarifyingQuestion:
         request_id = request_id or str(uuid.uuid4())
         started_at = time.perf_counter()
@@ -87,6 +99,16 @@ class AskService:
                 "unresolved_count": len(plan_result.unresolved_terms),
             },
         )
+        await _emit(
+            on_step,
+            "planner",
+            {
+                "ambiguity_score": plan_result.ambiguity_score,
+                "assumptions": [a.model_dump() for a in plan_result.assumptions],
+                "unresolved_terms": plan_result.unresolved_terms,
+                "interpretation": plan_result.interpretation,
+            },
+        )
 
         if conversation_id and clarification_answer is not None:
             ctx = self._conversation_store.get(conversation_id)
@@ -98,9 +120,12 @@ class AskService:
                 return Answer(text="Sorry, I couldn't find that conversation. Please try asking your question again.")
             self._conversation_store.complete(conversation_id)
             combined_question = _combine_clarification(ctx.original_question, clarification_answer)
-            return await self._execute_answer(combined_question, conversation_id, request_id, started_at, plan_result=plan_result, schema_repo=schema_repo, query_repo=query_repo)
+            return await self._execute_answer(combined_question, conversation_id, request_id, started_at, plan_result=plan_result, schema_repo=schema_repo, query_repo=query_repo, on_step=on_step)
 
         generated = await self._sql_generator.generate(question, schema_repo_override=schema_repo)
+
+        if not generated.requires_clarification:
+            await _emit(on_step, "sql_generator", {"sql": generated.sql, "explanation": generated.explanation})
 
         if generated.requires_clarification:
             conv_id = self._conversation_store.create(question, generated.clarification_options)
@@ -118,7 +143,7 @@ class AskService:
                 conversation_id=conv_id,
             )
 
-        return await self._do_execute(generated, question, conversation_id, request_id, started_at, plan_result=plan_result, query_repo=query_repo, schema_repo=schema_repo)
+        return await self._do_execute(generated, question, conversation_id, request_id, started_at, plan_result=plan_result, query_repo=query_repo, schema_repo=schema_repo, on_step=on_step)
 
     async def _do_execute(
         self,
@@ -131,6 +156,7 @@ class AskService:
         query_repo: QueryRepository | None = None,
         schema_repo: SchemaRepository | None = None,
         plan_result: PlanResult | None = None,
+        on_step: "OnStep | None" = None,
     ) -> Answer | ClarifyingQuestion:
         effective_query_repo = query_repo or self._query_repo
         effective_schema_repo = schema_repo or self._schema_repo
@@ -156,6 +182,16 @@ class AskService:
             )
         except Exception as exc:
             logger.warning("Validator failed, continuing without validation", extra={"error": str(exc)})
+
+        await _emit(
+            on_step,
+            "validator",
+            {
+                "scan_cost": validation_result.scan_cost if validation_result else 0,
+                "dependency_count": len(validation_result.dependency_set) if validation_result else 0,
+                "fingerprint_count": len(validation_result.fingerprints) if validation_result else 0,
+            },
+        )
 
         logger.debug("Executing SQL", extra={"request_id": request_id, "conversation_id": conversation_id, "sql": safe_sql})
         try:
@@ -193,6 +229,7 @@ class AskService:
                     query_repo=query_repo,
                     schema_repo=schema_repo,
                     plan_result=plan_result,
+                    on_step=on_step,
                 )
 
             logger.exception(
@@ -243,6 +280,15 @@ class AskService:
         except Exception as exc:
             logger.warning("Aggregator failed, continuing without answer_spec", extra={"error": str(exc)})
 
+        await _emit(
+            on_step,
+            "aggregator",
+            {
+                "headline": answer_spec.headline.value if answer_spec is not None else None,
+                "claims_count": len(answer_spec.claims) if answer_spec is not None else 0,
+            },
+        )
+
         if answer_spec is not None:
             try:
                 answer_spec, _dropped = self._validator.verify_claims(answer_spec, rows)
@@ -276,9 +322,12 @@ class AskService:
         plan_result: PlanResult | None = None,
         schema_repo: SchemaRepository | None = None,
         query_repo: QueryRepository | None = None,
+        on_step: "OnStep | None" = None,
     ) -> Answer | ClarifyingQuestion:
         generated = await self._sql_generator.generate(question, schema_repo_override=schema_repo)
-        return await self._do_execute(generated, question, conversation_id, request_id, started_at, plan_result=plan_result, query_repo=query_repo, schema_repo=schema_repo)
+        if not generated.requires_clarification:
+            await _emit(on_step, "sql_generator", {"sql": generated.sql, "explanation": generated.explanation})
+        return await self._do_execute(generated, question, conversation_id, request_id, started_at, plan_result=plan_result, query_repo=query_repo, schema_repo=schema_repo, on_step=on_step)
 
 
 def _format_answer(rows: list[dict], generated: GeneratedSQL) -> str:

@@ -1,5 +1,10 @@
-from fastapi import APIRouter, Depends
+import asyncio
+import json
 import uuid
+from typing import Any
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import StreamingResponse
 
 from app.core.logging import get_logger
 from app.schemas.ask import (
@@ -23,10 +28,30 @@ from app.domain.models import Answer, ClarifyingQuestion
 router = APIRouter()
 logger = get_logger("api.ask")
 
+# Overall wall-clock budget for a single /ask request (streaming or not).
+ASK_TIMEOUT_SECONDS = 60.0
+# Poll interval while waiting for pipeline step events / client disconnect checks.
+SSE_POLL_INTERVAL_SECONDS = 0.1
+
 
 async def get_ask_service() -> AskService:
     from app.main import app_state
     return app_state.ask_service
+
+
+def _resolve_session(session_id: str | None) -> tuple[str | None, str]:
+    if not session_id:
+        return None, ""
+    session_schema = f"session_{session_id.replace('-', '_')}"
+    from app.main import app_state
+    context_note = ""
+    if app_state is not None:
+        context_note = app_state.session_manager.get_session_note(session_id)
+    return session_schema, context_note
+
+
+def _sse_event(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
 @router.post("/ask")
@@ -45,23 +70,102 @@ async def ask(
             "question": body.question,
         },
     )
-    session_schema = None
-    context_note = ""
-    if body.session_id:
-        session_schema = f"session_{body.session_id.replace('-', '_')}"
-        from app.main import app_state
-        if app_state is not None:
-            context_note = app_state.session_manager.get_session_note(body.session_id)
+    session_schema, context_note = _resolve_session(body.session_id)
 
-    result = await service.answer(
-        question=body.question,
-        conversation_id=body.conversation_id,
-        clarification_answer=body.clarification_answer,
-        request_id=request_id,
-        session_schema=session_schema,
-        context_note=context_note,
+    result = await asyncio.wait_for(
+        service.answer(
+            question=body.question,
+            conversation_id=body.conversation_id,
+            clarification_answer=body.clarification_answer,
+            request_id=request_id,
+            session_schema=session_schema,
+            context_note=context_note,
+        ),
+        timeout=ASK_TIMEOUT_SECONDS,
     )
 
+    return _build_response(result, request_id)
+
+
+@router.get("/ask/stream")
+async def ask_stream(
+    request: Request,
+    question: str,
+    conversation_id: str | None = None,
+    clarification_answer: str | None = None,
+    session_id: str | None = None,
+    service: AskService = Depends(get_ask_service),
+) -> StreamingResponse:
+    """SSE variant of /ask. Emits `event: step` per completed pipeline stage with
+    real Planner/Validator/Aggregator data, then a final `event: done` carrying the
+    same JSON shape as the non-streaming endpoint. AskService itself knows nothing
+    about SSE — this route owns all transport framing via the `on_step` callback.
+    """
+    request_id = str(uuid.uuid4())
+    logger.info(
+        "Received /ask/stream request",
+        extra={"request_id": request_id, "conversation_id": conversation_id, "question": question},
+    )
+    session_schema, context_note = _resolve_session(session_id)
+
+    queue: asyncio.Queue[tuple[str, dict[str, Any]]] = asyncio.Queue()
+
+    async def on_step(stage: str, detail: dict[str, Any]) -> None:
+        await queue.put((stage, detail))
+
+    async def run_pipeline() -> Answer | ClarifyingQuestion:
+        return await service.answer(
+            question=question,
+            conversation_id=conversation_id,
+            clarification_answer=clarification_answer,
+            request_id=request_id,
+            session_schema=session_schema,
+            context_note=context_note,
+            on_step=on_step,
+        )
+
+    async def event_generator():
+        task = asyncio.ensure_future(run_pipeline())
+        try:
+            while not task.done():
+                if await request.is_disconnected():
+                    task.cancel()
+                    return
+                try:
+                    stage, detail = await asyncio.wait_for(queue.get(), timeout=SSE_POLL_INTERVAL_SECONDS)
+                    yield _sse_event("step", {"stage": stage, "detail": detail})
+                except asyncio.TimeoutError:
+                    continue
+
+            while not queue.empty():
+                stage, detail = queue.get_nowait()
+                yield _sse_event("step", {"stage": stage, "detail": detail})
+
+            try:
+                result = await asyncio.wait_for(task, timeout=ASK_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                yield _sse_event("error", {"message": "Request timed out"})
+                return
+
+            if isinstance(result, ClarifyingQuestion):
+                payload = _build_clarifying_payload(result, request_id)
+            else:
+                payload = _build_answer_payload(result, request_id)
+            yield _sse_event("done", payload)
+        except asyncio.CancelledError:
+            raise
+        finally:
+            if not task.done():
+                task.cancel()
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _build_response(result: Answer | ClarifyingQuestion, request_id: str) -> AnswerResponse | ClarifyingQuestionResponse:
     if isinstance(result, ClarifyingQuestion):
         logger.info(
             "Returning clarification response",
@@ -76,7 +180,18 @@ async def ask(
             options=result.options,
             conversation_id=result.conversation_id or "",
         )
+    return _build_answer_response(result, request_id)
 
+
+def _build_clarifying_payload(result: ClarifyingQuestion, request_id: str) -> dict[str, Any]:
+    return _build_response(result, request_id).model_dump()
+
+
+def _build_answer_payload(result: Answer, request_id: str) -> dict[str, Any]:
+    return _build_answer_response(result, request_id).model_dump()
+
+
+def _build_answer_response(result: Answer, request_id: str) -> AnswerResponse:
     chart_response: ChartSpecResponse | None = None
     if result.chart is not None:
         chart_response = ChartSpecResponse(

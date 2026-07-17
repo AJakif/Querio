@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { ChatThread } from './components/ChatThread'
-import { askQuestion } from './api/askApi'
+import { useThinkingStream } from './hooks/useThinkingStream'
 import { UploadZone, type UploadState } from './components/UploadZone'
 import { teardownSession } from './api/uploadApi'
 import type { ChatMessage } from './types/api'
@@ -10,6 +10,7 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | undefined>()
   const [uploadState, setUploadState] = useState<UploadState>({ phase: 'idle' })
+  const { trace, run: runAsk } = useThinkingStream()
 
   const latestSessionIdRef = useRef<string | undefined>(undefined)
 
@@ -47,28 +48,28 @@ export default function App() {
     setError(undefined)
     setMessages((prev) => [...prev, { type: 'user', question }])
     try {
-      const response = await askQuestion(question, undefined, undefined, sessionId)
+      const response = await runAsk(question, undefined, undefined, sessionId)
       setMessages((prev) => [...prev, response])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unexpected error occurred')
     } finally {
       setLoading(false)
     }
-  }, [sessionId])
+  }, [sessionId, runAsk])
 
   const handleClarify = useCallback(async (conversationId: string, option: string) => {
     setLoading(true)
     setError(undefined)
     setMessages((prev) => [...prev, { type: 'user', question: option }])
     try {
-      const response = await askQuestion(option, conversationId, option, sessionId)
+      const response = await runAsk(option, conversationId, option, sessionId)
       setMessages((prev) => [...prev, response])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unexpected error occurred')
     } finally {
       setLoading(false)
     }
-  }, [sessionId])
+  }, [sessionId, runAsk])
 
   return (
     <div className="app">
@@ -89,6 +90,7 @@ export default function App() {
           onClarify={handleClarify}
           loading={loading}
           error={error}
+          trace={trace}
         />
       </main>
     </div>

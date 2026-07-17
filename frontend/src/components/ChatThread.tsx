@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import type { ChatMessage } from '../types/api'
 import { ChatBubble } from './ChatBubble'
+import { ThinkingTrace } from './ThinkingTrace'
+import type { TraceState } from '../hooks/useThinkingStream'
 
 interface ChatThreadProps {
   messages: ChatMessage[]
@@ -8,9 +10,10 @@ interface ChatThreadProps {
   onClarify?: (conversationId: string, option: string) => void
   loading?: boolean
   error?: string
+  trace?: TraceState | null
 }
 
-export function ChatThread({ messages, onSend, onClarify, loading, error }: ChatThreadProps) {
+export function ChatThread({ messages, onSend, onClarify, loading, error, trace }: ChatThreadProps) {
   const [input, setInput] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
@@ -48,7 +51,8 @@ export function ChatThread({ messages, onSend, onClarify, loading, error }: Chat
             disabled={msg.type === 'clarifying_question' && i !== lastClarifierIdx}
           />
         ))}
-        {loading && <div className="loading-indicator">Thinking...</div>}
+        {loading && trace && <ThinkingTrace steps={trace.steps} />}
+        {loading && !trace && <div className="loading-indicator">Thinking...</div>}
         {error && <div className="error-message">{error}</div>}
         <div ref={endRef} />
       </div>

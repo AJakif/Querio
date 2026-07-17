@@ -212,6 +212,89 @@ body {
   cursor: not-allowed;
 }
 
+.thinking-trace {
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #0f1c33;
+  border: 1px solid #1e3a5f;
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  max-width: 75%;
+}
+
+.thinking-trace-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.thinking-trace-row.pending {
+  opacity: 0.6;
+}
+
+.thinking-trace-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  margin-top: 2px;
+}
+
+.thinking-trace-icon.spinner {
+  border: 2px solid #2d4a73;
+  border-top-color: #7db8ff;
+  animation: thinking-spin 0.8s linear infinite;
+}
+
+.thinking-trace-icon.check {
+  background: #34d399;
+  position: relative;
+}
+
+.thinking-trace-icon.check::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 2px;
+  width: 4px;
+  height: 8px;
+  border: solid #0f1c33;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.thinking-trace-copy {
+  display: flex;
+  flex-direction: column;
+}
+
+.thinking-trace-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e2ecff;
+  letter-spacing: 0.2px;
+}
+
+.thinking-trace-detail {
+  font-size: 12px;
+  color: #93a8c9;
+  margin-top: 2px;
+}
+
+@keyframes thinking-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking-trace-icon.spinner {
+    animation: none;
+  }
+}
+
 .loading-indicator {
   align-self: flex-start;
   color: var(--color-text-secondary);
