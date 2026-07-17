@@ -26,6 +26,8 @@ from app.agent.validator import Validator
 class AppState:
     ask_service: AskService
     session_manager: SessionManager
+    schema_repository: SchemaRepository
+    query_repository: QueryRepository
 
 
 app_state: AppState | None = None
@@ -161,6 +163,8 @@ async def lifespan(app: FastAPI):
             aggregator=aggregator,
         ),
         session_manager=session_manager,
+        schema_repository=schema_repo,
+        query_repository=query_repo,
     )
     yield
     logger.info("Shutting down Querio API")

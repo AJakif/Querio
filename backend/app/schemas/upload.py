@@ -37,6 +37,9 @@ class UploadConfirmResponse(BaseModel):
     session_id: str
     table_name: str
     row_count: int
+    join_key_column: str | None = None
+    join_key_table: str | None = None
+    suggested_questions: list[str] = []
 
 
 class UploadErrorResponse(BaseModel):

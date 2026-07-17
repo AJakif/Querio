@@ -81,6 +81,7 @@ export default function App() {
           onStateChange={setUploadState}
           currentSessionId={sessionId}
           onClearSession={handleClearSession}
+          onSuggestionSelect={handleSend}
         />
         <ChatThread
           messages={messages}
