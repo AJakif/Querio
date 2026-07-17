@@ -8,12 +8,13 @@ interface ChatThreadProps {
   messages: ChatMessage[]
   onSend: (question: string) => void
   onClarify?: (conversationId: string, option: string) => void
+  onConfirm?: (conversationId: string, amendments: { term: string; resolution: string }[]) => void
   loading?: boolean
   error?: string
   trace?: TraceState | null
 }
 
-export function ChatThread({ messages, onSend, onClarify, loading, error, trace }: ChatThreadProps) {
+export function ChatThread({ messages, onSend, onClarify, onConfirm, loading, error, trace }: ChatThreadProps) {
   const [input, setInput] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
@@ -35,6 +36,7 @@ export function ChatThread({ messages, onSend, onClarify, loading, error, trace 
   }
 
   const lastClarifierIdx = findLastClarifierIndex(messages)
+  const lastConfirmIdx = findLastConfirmIndex(messages)
 
   return (
     <div className="chat-thread">
@@ -48,7 +50,16 @@ export function ChatThread({ messages, onSend, onClarify, loading, error, trace 
                 ? (option) => onClarify(msg.conversation_id, option)
                 : undefined
             }
-            disabled={msg.type === 'clarifying_question' && i !== lastClarifierIdx}
+            onConfirm={
+              msg.type === 'confirm_first' && onConfirm && i === lastConfirmIdx
+                ? (convId, amendments) => onConfirm(convId, amendments)
+                : undefined
+            }
+            disabled={
+              (msg.type === 'clarifying_question' && i !== lastClarifierIdx) ||
+              (msg.type === 'confirm_first' && i !== lastConfirmIdx)
+            }
+            onSend={onSend}
           />
         ))}
         {loading && trace && <ThinkingTrace steps={trace.steps} />}
@@ -77,6 +88,16 @@ function findLastClarifierIndex(messages: ChatMessage[]): number {
   let last = -1
   for (let i = 0; i < messages.length; i++) {
     if (messages[i]?.type === 'clarifying_question') {
+      last = i
+    }
+  }
+  return last
+}
+
+function findLastConfirmIndex(messages: ChatMessage[]): number {
+  let last = -1
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i]?.type === 'confirm_first') {
       last = i
     }
   }

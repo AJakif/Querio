@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Any
+from typing import Any, Literal
 
 import uuid as _uuid
 
@@ -22,6 +22,8 @@ class ChartSpecResponse(BaseModel):
     data: list[dict[str, Any]]
     x_key: str
     y_key: str
+    emphasis_target: str | None = None
+    y_keys: list[str] | None = None
 
 
 class SqlQueryResponse(BaseModel):
@@ -77,6 +79,7 @@ class ClaimResponse(BaseModel):
 
 
 class AnswerSpecResponse(BaseModel):
+    response_type: Literal['stat', 'chart'] = 'stat'
     headline: HeadlineResponse
     restatement: str
     chart_spec: ChartSpecResponse | None = None
@@ -97,6 +100,7 @@ class AnswerResponse(BaseModel):
     validation: ValidationResultResponse | None = None
     answer_spec: AnswerSpecResponse | None = None
     dropped_claim_count: int = 0
+    result_rows: list[dict[str, Any]] | None = None
 
 
 class ClarifyingQuestionResponse(BaseModel):
@@ -104,3 +108,35 @@ class ClarifyingQuestionResponse(BaseModel):
     question: str
     options: list[str] = []
     conversation_id: str = Field(default_factory=lambda: str(_uuid.uuid4()))
+
+
+class ProxyAlternativeResponse(BaseModel):
+    label: str
+    question: str
+
+
+class ClarifyResponseResponse(BaseModel):
+    type: str = "clarify"
+    statement: str
+    unresolved_terms: list[str] = []
+    alternatives: list[ProxyAlternativeResponse] = []
+    add_data: bool = True
+    conversation_id: str | None = None
+
+
+class ConfirmFirstResponse(BaseModel):
+    type: str = "confirm_first"
+    conversation_id: str
+    plan: PlanResultResponse
+    scan_cost: int = 0
+    gate_reason: str  # "ambiguity" | "cost"
+
+
+class AssumptionAmendment(BaseModel):
+    term: str
+    resolution: str
+
+
+class ConfirmRequest(BaseModel):
+    conversation_id: str
+    amendments: list[AssumptionAmendment] = []

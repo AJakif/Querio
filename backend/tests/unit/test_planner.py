@@ -110,12 +110,14 @@ class TestPlanInApiResponse:
     def test_rich_plan_result_flows_through_ask_response(
         self, _make_client_with_planner
     ) -> None:
-        """Covers unambiguous, close_call, and unresolved_terms paths in one integration pass."""
+        """Assumptions and ambiguity_score flow through to the answer when no unresolved terms."""
         from app.main import app
         from app.api.routes.ask import get_ask_service
 
+        # No unresolved_terms — question is resolvable, so we get an answer (not clarify or gate)
+        # Use a score below the ambiguity_threshold (0.6) so the confirm-first gate doesn't fire.
         rich_plan = PlanResult(
-            ambiguity_score=0.75,
+            ambiguity_score=0.5,
             assumptions=[
                 Assumption(
                     term="revenue",
@@ -124,24 +126,48 @@ class TestPlanInApiResponse:
                     close_call=True,
                 )
             ],
-            unresolved_terms=["profit_margin"],
+            unresolved_terms=[],
             interpretation="Total payment value for all completed orders",
         )
 
         client, _, override_key = _make_client_with_planner(ScriptedPlanner(rich_plan))
         try:
-            resp = client.post("/api/ask", json={"question": "what is our revenue vs profit margin?"})
+            resp = client.post("/api/ask", json={"question": "what is our total revenue?"})
             assert resp.status_code == 200
             body = resp.json()
+            assert body["type"] == "answer"
             plan = body["plan"]
 
-            assert plan["ambiguity_score"] == pytest.approx(0.75)
-            assert plan["unresolved_terms"] == ["profit_margin"]
+            assert plan["ambiguity_score"] == pytest.approx(0.5)
+            assert plan["unresolved_terms"] == []
 
             assumption = plan["assumptions"][0]
             assert assumption["term"] == "revenue"
             assert assumption["close_call"] is True
             assert "order_items.price" in assumption["alternatives"]
+        finally:
+            app.dependency_overrides.pop(override_key, None)
+
+    def test_unresolved_terms_routes_to_clarify(self, _make_client_with_planner) -> None:
+        """When the planner reports unresolved terms, the API returns type=clarify (ROUTE-3)."""
+        from app.main import app
+        from app.api.routes.ask import get_ask_service
+
+        plan_with_unresolved = PlanResult(
+            ambiguity_score=0.75,
+            assumptions=[],
+            unresolved_terms=["profit_margin"],
+            interpretation="",
+        )
+
+        client, _, override_key = _make_client_with_planner(ScriptedPlanner(plan_with_unresolved))
+        try:
+            resp = client.post("/api/ask", json={"question": "what is our profit margin?"})
+            assert resp.status_code == 200
+            body = resp.json()
+            assert body["type"] == "clarify"
+            assert "profit_margin" in body["unresolved_terms"]
+            assert len(body["alternatives"]) >= 2
         finally:
             app.dependency_overrides.pop(override_key, None)
 

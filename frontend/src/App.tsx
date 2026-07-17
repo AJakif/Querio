@@ -4,6 +4,7 @@ import { useThinkingStream } from './hooks/useThinkingStream'
 import { EmptyStateEda } from './components/EmptyStateEda'
 import { UploadZone, type UploadState } from './components/UploadZone'
 import { teardownSession } from './api/uploadApi'
+import { confirmAssumptions } from './api/askApi'
 import type { ChatMessage } from './types/api'
 
 export default function App() {
@@ -72,6 +73,22 @@ export default function App() {
     }
   }, [sessionId, runAsk])
 
+  const handleConfirm = useCallback(
+    async (conversationId: string, amendments: { term: string; resolution: string }[]) => {
+      setLoading(true)
+      setError(undefined)
+      try {
+        const response = await confirmAssumptions(conversationId, amendments)
+        setMessages((prev) => [...prev, response])
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'An unexpected error occurred')
+      } finally {
+        setLoading(false)
+      }
+    },
+    [],
+  )
+
   return (
     <div className="app">
       <header className="app-header">
@@ -90,6 +107,7 @@ export default function App() {
           messages={messages}
           onSend={handleSend}
           onClarify={handleClarify}
+          onConfirm={handleConfirm}
           loading={loading}
           error={error}
           trace={trace}

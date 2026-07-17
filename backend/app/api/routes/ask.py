@@ -13,6 +13,10 @@ from app.schemas.ask import (
     AnswerSpecResponse,
     ClaimResponse,
     ClarifyingQuestionResponse,
+    ClarifyResponseResponse,
+    ConfirmFirstResponse,
+    ConfirmRequest,
+    ProxyAlternativeResponse,
     ChartSpecResponse,
     HeadlineResponse,
     SqlQueryResponse,
@@ -24,7 +28,7 @@ from app.schemas.ask import (
 )
 from app.core.config import settings
 from app.services.ask_service import AskService
-from app.domain.models import Answer, ClarifyingQuestion
+from app.domain.models import Answer, ClarifyingQuestion, ClarifyResponse, ConfirmFirst
 from app.repositories.base import SchemaRepository
 from app.repositories.combined_schema_repository import CombinedSchemaRepository
 
@@ -69,7 +73,7 @@ def _sse_event(event: str, data: dict[str, Any]) -> str:
 async def ask(
     body: AskRequest,
     service: AskService = Depends(get_ask_service),
-) -> AnswerResponse | ClarifyingQuestionResponse:
+) -> AnswerResponse | ClarifyingQuestionResponse | ClarifyResponseResponse | ConfirmFirstResponse:
     request_id = str(uuid.uuid4())
     logger.info(
         "Received /ask request",
@@ -99,6 +103,33 @@ async def ask(
     return _build_response(result, request_id)
 
 
+@router.post("/ask/confirm")
+async def ask_confirm(
+    body: ConfirmRequest,
+    service: AskService = Depends(get_ask_service),
+) -> AnswerResponse | ClarifyingQuestionResponse | ClarifyResponseResponse | ConfirmFirstResponse:
+    """Execute a previously gated query using the user's confirmed (or amended) assumptions."""
+    request_id = str(uuid.uuid4())
+    logger.info(
+        "Received /ask/confirm request",
+        extra={
+            "request_id": request_id,
+            "conversation_id": body.conversation_id,
+            "amendment_count": len(body.amendments),
+        },
+    )
+    amendments = [(a.term, a.resolution) for a in body.amendments]
+    result = await asyncio.wait_for(
+        service.answer_confirmed(
+            confirm_id=body.conversation_id,
+            amendments=amendments,
+            request_id=request_id,
+        ),
+        timeout=ASK_TIMEOUT_SECONDS,
+    )
+    return _build_response(result, request_id)
+
+
 @router.get("/ask/stream")
 async def ask_stream(
     request: Request,
@@ -125,7 +156,7 @@ async def ask_stream(
     async def on_step(stage: str, detail: dict[str, Any]) -> None:
         await queue.put((stage, detail))
 
-    async def run_pipeline() -> Answer | ClarifyingQuestion:
+    async def run_pipeline() -> Answer | ClarifyingQuestion | ClarifyResponse | ConfirmFirst:
         return await service.answer(
             question=question,
             conversation_id=conversation_id,
@@ -160,10 +191,7 @@ async def ask_stream(
                 yield _sse_event("error", {"message": "Request timed out"})
                 return
 
-            if isinstance(result, ClarifyingQuestion):
-                payload = _build_clarifying_payload(result, request_id)
-            else:
-                payload = _build_answer_payload(result, request_id)
+            payload = _build_response(result, request_id).model_dump()
             yield _sse_event("done", payload)
         except asyncio.CancelledError:
             raise
@@ -178,7 +206,20 @@ async def ask_stream(
     )
 
 
-def _build_response(result: Answer | ClarifyingQuestion, request_id: str) -> AnswerResponse | ClarifyingQuestionResponse:
+def _build_response(
+    result: Answer | ClarifyingQuestion | ClarifyResponse | ConfirmFirst, request_id: str
+) -> AnswerResponse | ClarifyingQuestionResponse | ClarifyResponseResponse | ConfirmFirstResponse:
+    if isinstance(result, ClarifyResponse):
+        return ClarifyResponseResponse(
+            statement=result.statement,
+            unresolved_terms=result.unresolved_terms,
+            alternatives=[
+                ProxyAlternativeResponse(label=a.label, question=a.question)
+                for a in result.alternatives
+            ],
+            add_data=result.add_data,
+            conversation_id=result.conversation_id,
+        )
     if isinstance(result, ClarifyingQuestion):
         logger.info(
             "Returning clarification response",
@@ -193,15 +234,41 @@ def _build_response(result: Answer | ClarifyingQuestion, request_id: str) -> Ans
             options=result.options,
             conversation_id=result.conversation_id or "",
         )
+    if isinstance(result, ConfirmFirst):
+        logger.info(
+            "Returning confirm_first gate response",
+            extra={
+                "request_id": request_id,
+                "conversation_id": result.conversation_id,
+                "gate_reason": result.gate_reason,
+                "scan_cost": result.scan_cost,
+            },
+        )
+        return _build_confirm_first_response(result)
     return _build_answer_response(result, request_id)
 
 
-def _build_clarifying_payload(result: ClarifyingQuestion, request_id: str) -> dict[str, Any]:
-    return _build_response(result, request_id).model_dump()
-
-
-def _build_answer_payload(result: Answer, request_id: str) -> dict[str, Any]:
-    return _build_answer_response(result, request_id).model_dump()
+def _build_confirm_first_response(result: ConfirmFirst) -> ConfirmFirstResponse:
+    plan = result.plan
+    return ConfirmFirstResponse(
+        conversation_id=result.conversation_id,
+        plan=PlanResultResponse(
+            ambiguity_score=plan.ambiguity_score,
+            assumptions=[
+                AssumptionResponse(
+                    term=a.term,
+                    resolution=a.resolution,
+                    alternatives=a.alternatives,
+                    close_call=a.close_call,
+                )
+                for a in plan.assumptions
+            ],
+            unresolved_terms=plan.unresolved_terms,
+            interpretation=plan.interpretation,
+        ),
+        scan_cost=result.scan_cost,
+        gate_reason=result.gate_reason,
+    )
 
 
 def _build_answer_response(result: Answer, request_id: str) -> AnswerResponse:
@@ -263,6 +330,7 @@ def _build_answer_response(result: Answer, request_id: str) -> AnswerResponse:
     if result.answer_spec is not None:
         spec = result.answer_spec
         answer_spec_response = AnswerSpecResponse(
+            response_type=spec.response_type,
             headline=HeadlineResponse(
                 value=spec.headline.value,
                 label=spec.headline.label,
@@ -275,6 +343,8 @@ def _build_answer_response(result: Answer, request_id: str) -> AnswerResponse:
                 data=spec.chart_spec.data,
                 x_key=spec.chart_spec.x_key,
                 y_key=spec.chart_spec.y_key,
+                emphasis_target=spec.chart_spec.emphasis_target,
+                y_keys=spec.chart_spec.y_keys,
             ) if spec.chart_spec else None,
             suppression_reason=spec.suppression_reason,
             claims=[
@@ -321,4 +391,5 @@ def _build_answer_response(result: Answer, request_id: str) -> AnswerResponse:
         validation=validation_response,
         answer_spec=answer_spec_response,
         dropped_claim_count=result.answer_spec.dropped_claim_count if result.answer_spec else 0,
+        result_rows=result.result_rows,
     )

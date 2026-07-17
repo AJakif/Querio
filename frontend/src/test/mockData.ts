@@ -1,4 +1,4 @@
-﻿import type { AskResponse, ChartSpecResponse, SchemaSummaryResponse } from '../types/api'
+﻿import type { AskResponse, ChartSpecResponse, SchemaSummaryResponse, ConfirmFirstResponse } from '../types/api'
 
 type Entry = {
   match: string | RegExp
@@ -509,6 +509,10 @@ export function getMockResponse(
     }
   }
 
+  if (/^ambiguous.*test|^something ambiguous|^confirm.gate.test/i.test(q)) {
+    return getMockConfirmFirstResponse()
+  }
+
   for (const clarify of CLARIFY_MATCHERS) {
     if (q.match(clarify.match)) {
       return {
@@ -535,6 +539,33 @@ function extractOptions(question: string): string[] {
     return match.map((m) => m.replace(/\*\*/g, ''))
   }
   return ['count', 'list', 'region']
+}
+
+export function getMockConfirmFirstResponse(): ConfirmFirstResponse {
+  return {
+    type: 'confirm_first',
+    conversation_id: `mock-confirm-${Date.now()}`,
+    plan: {
+      ambiguity_score: 0.9,
+      assumptions: [
+        { term: 'recent', resolution: 'last 30 days', alternatives: ['last 7 days', 'last 90 days'], close_call: true },
+      ],
+      unresolved_terms: [],
+      interpretation: 'Showing recent orders',
+    },
+    scan_cost: 0,
+    gate_reason: 'ambiguity',
+  }
+}
+
+export function getMockConfirmResponse(): AskResponse {
+  return {
+    type: 'answer',
+    answer: 'Here are the results based on your confirmed assumptions.',
+    chart: null,
+    sql: { sql: 'SELECT COUNT(*) FROM orders WHERE created_at > NOW() - INTERVAL \'30 days\'', explanation: 'Count recent orders.' },
+    conversation_id: null,
+  }
 }
 
 export function getMockSchemaSummary(): SchemaSummaryResponse {

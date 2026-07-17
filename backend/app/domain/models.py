@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -69,6 +70,7 @@ class Answer:
     plan: PlanResult | None = None
     validation: ValidationResult | None = None
     answer_spec: AnswerSpec | None = None
+    result_rows: list[dict[str, Any]] | None = None
 
 
 @dataclass
@@ -79,10 +81,106 @@ class ClarifyingQuestion:
 
 
 @dataclass
+class ConfirmFirst:
+    """Returned when ambiguity score or scan cost exceeds configured threshold.
+
+    The frontend shows the plan's assumptions as editable chips and waits for
+    the user to confirm (or amend) before any SQL executes.
+    ``conversation_id`` is the confirm-store key; pass it to POST /ask/confirm.
+    """
+
+    plan: "PlanResult"
+    scan_cost: int
+    conversation_id: str
+    gate_reason: str  # "ambiguity" | "cost"
+
+
+@dataclass
+class ProxyAlternative:
+    label: str
+    question: str
+
+
+@dataclass
+class ClarifyResponse:
+    """ROUTE-3: question asked about data absent from the schema.
+
+    Contains a plain-language dataset statement, ≥2 schema-grounded proxy
+    alternatives the user can submit as follow-up questions, and an add_data
+    flag signalling that the upload flow is available as an escape hatch.
+    """
+
+    statement: str
+    unresolved_terms: list[str]
+    alternatives: list[ProxyAlternative]
+    add_data: bool = True
+    conversation_id: str | None = None
+
+
+@dataclass
 class ExampleQuestion:
     question: str
     answer_shape: str
     hint: str
+
+
+class BadgeState(str, Enum):
+    unverified = "unverified"
+    verified = "verified"
+    needs_recheck = "needs_recheck"
+    disputed = "disputed"
+
+
+class VerificationEventType(str, Enum):
+    verified = "verified"
+    disputed = "disputed"
+    needs_recheck = "needs_recheck"
+
+
+@dataclass
+class VerificationEvent:
+    event_type: VerificationEventType
+    actor: str
+    timestamp: datetime
+    fingerprints: list[Fingerprint] = field(default_factory=list)
+    drift_reason: str | None = None
+
+
+@dataclass
+class QueryRecord:
+    id: str
+    sql: str
+    author: str
+    question: str = ""
+    fingerprints_at_run: list[Fingerprint] = field(default_factory=list)
+    history: list[VerificationEvent] = field(default_factory=list)
+
+    def badge_state(self) -> BadgeState:
+        """Compute badge state by replaying append-only history. Never mutated directly."""
+        state = BadgeState.unverified
+        for event in self.history:
+            if event.event_type == VerificationEventType.verified:
+                state = BadgeState.verified
+            elif event.event_type == VerificationEventType.disputed:
+                if state == BadgeState.verified:
+                    state = BadgeState.disputed
+            elif event.event_type == VerificationEventType.needs_recheck:
+                if state == BadgeState.verified:
+                    state = BadgeState.needs_recheck
+        return state
+
+    def last_verification(self) -> VerificationEvent | None:
+        for event in reversed(self.history):
+            if event.event_type == VerificationEventType.verified:
+                return event
+        return None
+
+
+@dataclass
+class Account:
+    username: str
+    password_hash: str
+    is_owner: bool = False
 
 
 @dataclass
