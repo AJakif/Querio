@@ -76,3 +76,22 @@ class ClarifyingQuestion:
     question: str
     options: list[str] = field(default_factory=list)
     conversation_id: str | None = None
+
+
+@dataclass
+class ExampleQuestion:
+    question: str
+    answer_shape: str
+    hint: str
+
+
+@dataclass
+class SchemaSummary:
+    table_name: str
+    row_count: int
+    date_span_start: str | None
+    date_span_end: str | None
+    key_dimension_count: int
+    headline_label: str
+    headline_value: float
+    examples: list[ExampleQuestion] = field(default_factory=list)

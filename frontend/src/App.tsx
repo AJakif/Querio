@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { ChatThread } from './components/ChatThread'
+import { EmptyStateEda } from './components/EmptyStateEda'
 import { askQuestion } from './api/askApi'
 import { UploadZone, type UploadState } from './components/UploadZone'
 import { teardownSession } from './api/uploadApi'
@@ -82,6 +83,7 @@ export default function App() {
           currentSessionId={sessionId}
           onClearSession={handleClearSession}
         />
+        {messages.length === 0 && <EmptyStateEda sessionId={sessionId} onSend={handleSend} />}
         <ChatThread
           messages={messages}
           onSend={handleSend}
