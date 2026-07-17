@@ -197,7 +197,17 @@ class AskService:
             combined_question = _combine_clarification(ctx.original_question, clarification_answer)
             return await self._execute_answer(combined_question, conversation_id, request_id, started_at, plan_result=plan_result, schema_repo=schema_repo, query_repo=query_repo, on_step=on_step)
 
-        generated = await self._sql_generator.generate(question, schema_repo_override=schema_repo)
+        try:
+            generated = await self._sql_generator.generate(question, schema_repo_override=schema_repo)
+        except Exception as exc:
+            logger.warning(
+                "SQL generator failed — provider unreachable",
+                extra={"request_id": request_id, "error": str(exc), "error_type": exc.__class__.__name__},
+            )
+            return Answer(
+                text="Sorry, the AI model is currently unavailable. Please check that your model provider is running and try again.",
+                conversation_id=conversation_id,
+            )
 
         if not generated.requires_clarification:
             await _emit(on_step, "sql_generator", {"sql": generated.sql, "explanation": generated.explanation})
@@ -362,10 +372,21 @@ class AskService:
                         "execution_time_ms": _elapsed_ms(started_at),
                     },
                 )
-                repaired = await self._sql_generator.generate(
-                    _build_repair_prompt(question, generated.sql, exc),
-                    schema_repo_override=schema_repo,
-                )
+                try:
+                    repaired = await self._sql_generator.generate(
+                        _build_repair_prompt(question, generated.sql, exc),
+                        schema_repo_override=schema_repo,
+                    )
+                except Exception as repair_exc:
+                    logger.warning(
+                        "SQL generator failed during repair — provider unreachable",
+                        extra={"request_id": request_id, "error": str(repair_exc), "error_type": repair_exc.__class__.__name__},
+                    )
+                    return Answer(
+                        text="Sorry, the AI model is currently unavailable. Please check that your model provider is running and try again.",
+                        conversation_id=conversation_id,
+                        plan=plan_result,
+                    )
                 if repaired.requires_clarification:
                     conv_id = self._conversation_store.create(question, repaired.clarification_options)
                     return ClarifyingQuestion(
@@ -479,7 +500,17 @@ class AskService:
         query_repo: QueryRepository | None = None,
         on_step: "OnStep | None" = None,
     ) -> Answer | ClarifyingQuestion | ConfirmFirst:
-        generated = await self._sql_generator.generate(question, schema_repo_override=schema_repo)
+        try:
+            generated = await self._sql_generator.generate(question, schema_repo_override=schema_repo)
+        except Exception as exc:
+            logger.warning(
+                "SQL generator failed — provider unreachable",
+                extra={"request_id": request_id, "error": str(exc), "error_type": exc.__class__.__name__},
+            )
+            return Answer(
+                text="Sorry, the AI model is currently unavailable. Please check that your model provider is running and try again.",
+                conversation_id=conversation_id,
+            )
         if not generated.requires_clarification:
             await _emit(on_step, "sql_generator", {"sql": generated.sql, "explanation": generated.explanation})
         return await self._do_execute(generated, question, conversation_id, request_id, started_at, plan_result=plan_result, query_repo=query_repo, schema_repo=schema_repo, on_step=on_step)

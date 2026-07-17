@@ -87,6 +87,12 @@ class FakeSqlGeneratorCapturingSchemaTables(FakeSqlGenerator):
         )
 
 
+class FakeSqlGeneratorConnectError(FakeSqlGenerator):
+    """Simulates a provider connection failure (e.g. Ollama unreachable)."""
+    async def generate(self, question: str, **kwargs) -> GeneratedSQL:
+        raise ConnectionError("All connection attempts failed")
+
+
 class FakeSqlGeneratorRepairing(FakeSqlGenerator):
     def __init__(self):
         self.calls: list[str] = []
@@ -146,6 +152,20 @@ class TestAskService:
             schema_repository=schema_repo,
             query_repository=query_repo,
         )
+
+    @pytest.mark.asyncio
+    async def test_answer_returns_graceful_answer_when_provider_unreachable(self, schema_repo, query_repo):
+        """ConnectError from the LLM provider must not escape as an unhandled 500;
+        AskService must return a clean Answer with an error message instead."""
+        from app.services.ask_service import AskService
+        service = AskService(
+            sql_generator=FakeSqlGeneratorConnectError(),
+            schema_repository=schema_repo,
+            query_repository=query_repo,
+        )
+        result = await service.answer("How many orders?")
+        assert isinstance(result, Answer)
+        assert "unavailable" in result.text.lower()
 
     @pytest.mark.asyncio
     async def test_answer_returns_answer_with_text(self, service):
