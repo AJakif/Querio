@@ -101,6 +101,26 @@ The default Docker setup mounts `./.env.secrets` read-only into the container an
 
 If hosted provider API keys are blank, Querio falls back to its built-in fake SQL generator so the local stack can still boot for wiring checks. Real natural-language SQL generation requires a valid hosted provider API key or a reachable local Ollama server.
 
+### Running with Ollama
+
+Querio's agent pipeline chains several structured-output calls per question (ambiguity scoring, SQL generation, cost/fingerprint validation, AnswerSpec assembly with typed chart specs and citations), so the local model needs reliable function-calling / structured-output support, not just general chat quality — this is where small local models tend to fall apart first.
+
+**Recommended model: `qwen2.5:7b`.** It has meaningfully better structured-output/tool-calling reliability than the repo's current default (`llama3.1:8b`) at a comparable footprint (~4.7GB Q4). Avoid going smaller (`llama3.2:3b`, `phi3-mini`, etc.) — sub-7B models tend to silently drift on JSON shape across a multi-step tool-call chain rather than fail obviously.
+
+```bash
+ollama pull qwen2.5:7b
+```
+
+Then set in `.env` (or `.env.secrets` is not needed here — Ollama requires no API key):
+
+```bash
+MODEL_PROVIDER=ollama
+OLLAMA_MODEL=qwen2.5:7b
+OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
+`scripts/setup.sh` / `scripts/setup.ps1` auto-detect a running Ollama daemon and default `MODEL_PROVIDER=ollama` for a fresh `.env`, but they don't override `OLLAMA_MODEL` — it's still worth setting `OLLAMA_MODEL=qwen2.5:7b` by hand instead of the generated default (`llama3.1`).
+
 ## Logging
 
 The backend logger is environment-aware:
