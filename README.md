@@ -102,4 +102,4 @@ Coverage focuses on the guardrail validator, agent tool functions, and the provi
 
 ## License
 
-TBD.
+[MIT](LICENSE)
