@@ -48,6 +48,14 @@ class AskService:
         self._validator = validator or Validator()
         self._aggregator = aggregator or FakeAggregator()
 
+    @property
+    def schema_repository(self) -> SchemaRepository:
+        return self._schema_repo
+
+    @property
+    def query_repository(self) -> QueryRepository:
+        return self._query_repo
+
     async def _session_schema_repo(self, session_schema: str) -> SchemaRepository | None:
         if not session_schema:
             return None

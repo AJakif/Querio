@@ -313,6 +313,66 @@ body {
   border-radius: var(--radius-sm);
 }
 
+.empty-state-eda {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-sm);
+}
+
+.empty-state-eda-loading,
+.empty-state-eda-error {
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+.eda-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.eda-stat {
+  padding: 4px 10px;
+  background: var(--color-surface-secondary, #f3f4f6);
+  border-radius: var(--radius-sm);
+}
+
+.eda-headline {
+  font-weight: 600;
+}
+
+.eda-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.eda-example-question {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+}
+
+.eda-example-text {
+  font-size: 14px;
+}
+
+.eda-example-hint {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
 .chart-widget {
   margin-top: 12px;
 }

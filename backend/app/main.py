@@ -9,6 +9,7 @@ from app.core.logging import configure_logging, get_logger
 from app.api.routes.ask import router as ask_router
 from app.api.routes.upload import router as upload_router
 from app.api.routes.session import router as session_router
+from app.api.routes.schema import router as schema_router
 from app.services.ask_service import AskService
 from app.services.session_manager import SessionManager
 from app.repositories.base import SchemaRepository, QueryRepository
@@ -176,6 +177,7 @@ app = FastAPI(title="Querio", lifespan=lifespan)
 app.include_router(ask_router, prefix="/api")
 app.include_router(upload_router, prefix="/api")
 app.include_router(session_router, prefix="/api")
+app.include_router(schema_router, prefix="/api")
 
 
 @app.get("/health")

@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { ChatThread } from './components/ChatThread'
 import { useThinkingStream } from './hooks/useThinkingStream'
+import { EmptyStateEda } from './components/EmptyStateEda'
 import { UploadZone, type UploadState } from './components/UploadZone'
 import { teardownSession } from './api/uploadApi'
 import type { ChatMessage } from './types/api'
@@ -84,6 +85,7 @@ export default function App() {
           onClearSession={handleClearSession}
           onSuggestionSelect={handleSend}
         />
+        {messages.length === 0 && <EmptyStateEda sessionId={sessionId} onSend={handleSend} />}
         <ChatThread
           messages={messages}
           onSend={handleSend}
