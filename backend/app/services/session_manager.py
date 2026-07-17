@@ -50,6 +50,9 @@ class SessionManager:
     def __init__(self, preview_store: PreviewStore | None = None):
         self._preview_store = preview_store or PreviewStore()
         self._session_notes: dict[str, str] = {}
+        # (join_key_column, join_key_seed_table) per session_id, populated by
+        # upload_confirm after cross-dataset join detection (Epic 8 Slice 16).
+        self._session_join_keys: dict[str, tuple[str, str]] = {}
 
     def store_preview(self, result: PreviewResult) -> str:
         return self._preview_store.store(result)
@@ -101,9 +104,16 @@ class SessionManager:
     def get_session_note(self, session_id: str) -> str:
         return self._session_notes.get(session_id, "")
 
+    def set_join_key(self, session_id: str, column: str, seed_table: str) -> None:
+        self._session_join_keys[session_id] = (column, seed_table)
+
+    def get_join_key(self, session_id: str) -> tuple[str, str] | None:
+        return self._session_join_keys.get(session_id)
+
     async def drop_session_schema(self, session_id: str) -> None:
         schema_name = _session_id_to_schema(session_id)
         self._session_notes.pop(session_id, None)
+        self._session_join_keys.pop(session_id, None)
         try:
             await _execute_ddl(f"DROP SCHEMA IF EXISTS {_quote_ident(schema_name)} CASCADE")
             logger.info("Dropped session schema", extra={"session_id": session_id, "schema": schema_name})

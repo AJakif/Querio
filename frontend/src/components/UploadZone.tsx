@@ -8,7 +8,15 @@ export type UploadState =
   | { phase: 'url-loading' }
   | { phase: 'preview'; preview: UploadPreviewResponse }
   | { phase: 'loading' }
-  | { phase: 'ready'; sessionId: string; rowCount: number; tableName: string }
+  | {
+      phase: 'ready'
+      sessionId: string
+      rowCount: number
+      tableName: string
+      joinKeyColumn: string | null
+      joinKeyTable: string | null
+      suggestedQuestions: string[]
+    }
   | { phase: 'tearing-down' }
   | { phase: 'error'; message: string }
 
@@ -17,9 +25,10 @@ interface UploadZoneProps {
   onStateChange: (state: UploadState) => void
   currentSessionId?: string
   onClearSession?: () => Promise<void>
+  onSuggestionSelect?: (question: string) => void
 }
 
-export function UploadZone({ state, onStateChange, currentSessionId, onClearSession }: UploadZoneProps) {
+export function UploadZone({ state, onStateChange, currentSessionId, onClearSession, onSuggestionSelect }: UploadZoneProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [urlInput, setUrlInput] = useState('')
 
@@ -89,6 +98,9 @@ export function UploadZone({ state, onStateChange, currentSessionId, onClearSess
         sessionId: result.session_id,
         rowCount: result.row_count,
         tableName: result.table_name,
+        joinKeyColumn: result.join_key_column,
+        joinKeyTable: result.join_key_table,
+        suggestedQuestions: result.suggested_questions,
       })
     } catch (err) {
       onStateChange({
@@ -204,12 +216,32 @@ export function UploadZone({ state, onStateChange, currentSessionId, onClearSess
   }
 
   if (state.phase === 'ready') {
+    const hasSuggestions = state.joinKeyColumn && state.suggestedQuestions.length > 0
     return (
       <div className="upload-zone ready">
         <p>
           Uploaded <strong>{state.tableName}</strong> — {state.rowCount.toLocaleString()} rows loaded.
           Your questions will be answered using this dataset.
         </p>
+        {hasSuggestions && (
+          <div className="upload-join-suggestions">
+            <p className="upload-join-suggestions-hint">
+              Detected a shared <strong>{state.joinKeyColumn}</strong> column with {state.joinKeyTable} — try asking:
+            </p>
+            <div className="upload-join-suggestions-chips">
+              {state.suggestedQuestions.map((question) => (
+                <button
+                  key={question}
+                  type="button"
+                  className="upload-suggestion-chip"
+                  onClick={() => onSuggestionSelect?.(question)}
+                >
+                  {question}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <button
           className="upload-reset-btn"
           onClick={handleReplace}

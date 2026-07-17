@@ -12,8 +12,10 @@ from app.schemas.upload import (
     ColumnPreview,
     ColumnStats,
 )
+from app.repositories.base import QueryRepository, SchemaRepository
 from app.services.csv_ingestion import parse_csv, parse_json
-from app.services.session_manager import SessionManager
+from app.services.join_detection import JoinSuggestionResult, detect_cross_dataset_join
+from app.services.session_manager import UPLOADED_TABLE_NAME, SessionManager
 from app.services.ssrf_guard import fetch_url, SSRFError
 
 
@@ -28,6 +30,20 @@ def get_session_manager() -> SessionManager:
     if app_state is None:
         raise HTTPException(status_code=503, detail="Application not ready")
     return app_state.session_manager
+
+
+def get_seed_schema_repository() -> SchemaRepository:
+    from app.main import app_state
+    if app_state is None:
+        raise HTTPException(status_code=503, detail="Application not ready")
+    return app_state.schema_repository
+
+
+def get_seed_query_repository() -> QueryRepository:
+    from app.main import app_state
+    if app_state is None:
+        raise HTTPException(status_code=503, detail="Application not ready")
+    return app_state.query_repository
 
 
 @router.post("/upload/preview", response_model=UploadPreviewResponse)
@@ -165,6 +181,8 @@ async def upload_preview_from_url(
 async def upload_confirm(
     body: UploadConfirmRequest,
     session_manager: SessionManager = Depends(get_session_manager),
+    seed_schema_repo: SchemaRepository = Depends(get_seed_schema_repository),
+    seed_query_repo: QueryRepository = Depends(get_seed_query_repository),
 ):
     try:
         session_id, row_count = await session_manager.create_session_schema(
@@ -181,10 +199,31 @@ async def upload_confirm(
             },
         )
 
+        join_result = JoinSuggestionResult(column=None, seed_table=None)
+        try:
+            join_result = await detect_cross_dataset_join(
+                uploaded_table=UPLOADED_TABLE_NAME,
+                uploaded_schema_repo=session_manager.get_schema_repo(session_id),
+                uploaded_query_repo=session_manager.get_query_repo(session_id),
+                seed_schema_repo=seed_schema_repo,
+                seed_query_repo=seed_query_repo,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Cross-dataset join detection failed; continuing without suggestions",
+                extra={"session_id": session_id, "error": str(exc)},
+            )
+
+        if join_result.detected and join_result.column is not None and join_result.seed_table is not None:
+            session_manager.set_join_key(session_id, join_result.column, join_result.seed_table)
+
         return UploadConfirmResponse(
             session_id=session_id,
             table_name="uploaded_data",
             row_count=row_count,
+            join_key_column=join_result.column,
+            join_key_table=join_result.seed_table,
+            suggested_questions=join_result.questions,
         )
 
     except ValueError as exc:

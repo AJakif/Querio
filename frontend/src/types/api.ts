@@ -40,3 +40,20 @@ export interface UserMessage {
 }
 
 export type ChatMessage = AskResponse | UserMessage
+
+export interface ExampleQuestionResponse {
+  question: string
+  answer_shape: 'number' | 'chart' | 'list'
+  hint: string
+}
+
+export interface SchemaSummaryResponse {
+  table_name: string
+  row_count: number
+  date_span_start: string | null
+  date_span_end: string | null
+  key_dimension_count: number
+  headline_label: string
+  headline_value: number
+  examples: ExampleQuestionResponse[]
+}

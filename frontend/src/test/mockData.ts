@@ -1,4 +1,4 @@
-﻿import type { AskResponse, ChartSpecResponse } from '../types/api'
+﻿import type { AskResponse, ChartSpecResponse, SchemaSummaryResponse } from '../types/api'
 
 type Entry = {
   match: string | RegExp
@@ -535,5 +535,23 @@ function extractOptions(question: string): string[] {
     return match.map((m) => m.replace(/\*\*/g, ''))
   }
   return ['count', 'list', 'region']
+}
+
+export function getMockSchemaSummary(): SchemaSummaryResponse {
+  return {
+    table_name: 'fct_orders',
+    row_count: 99441,
+    date_span_start: '2016-09-04',
+    date_span_end: '2018-10-17',
+    key_dimension_count: 3,
+    headline_label: 'Total total_payment_value',
+    headline_value: 15843553.24,
+    examples: [
+      { question: 'How many fct_orders are there in total?', answer_shape: 'number', hint: 'Returns a single number.' },
+      { question: 'What is the total total_payment_value across all fct_orders?', answer_shape: 'number', hint: 'Returns a single number.' },
+      { question: 'What is the total total_payment_value by order_status?', answer_shape: 'chart', hint: 'Returns a chart broken down by order_status.' },
+      { question: 'What are the top 10 fct_orders by total_payment_value?', answer_shape: 'list', hint: 'Returns a list of the top matching rows.' },
+    ],
+  }
 }
 

@@ -25,6 +25,9 @@ export interface UploadConfirmResponse {
   session_id: string
   table_name: string
   row_count: number
+  join_key_column: string | null
+  join_key_table: string | null
+  suggested_questions: string[]
 }
 
 export async function uploadPreview(file: File): Promise<UploadPreviewResponse> {
