@@ -10,3 +10,23 @@ class GuardrailViolation(Exception):
 
 class AmbiguousQuestion(Exception):
     pass
+
+
+class QueryNotFoundError(Exception):
+    pass
+
+
+class SelfVerifyError(ValueError):
+    pass
+
+
+class IdentityRequiredError(Exception):
+    pass
+
+
+class AccountExistsError(Exception):
+    pass
+
+
+class InvalidCredentialsError(Exception):
+    pass

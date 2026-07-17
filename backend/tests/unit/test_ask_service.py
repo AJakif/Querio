@@ -413,3 +413,182 @@ class TestAskService:
         assert "The previous SQL failed" in sql_gen.calls[1]
         # Validator issues EXPLAIN/DISTINCT calls in addition to the two main executions.
         assert len(query_repo.calls) >= 2
+
+
+# ---------------------------------------------------------------------------
+# Epic 9 Slice 6 — Verified-query cache path
+# ---------------------------------------------------------------------------
+
+
+class CountingSqlGenerator(FakeSqlGenerator):
+    """Records how many times generate() is called."""
+
+    def __init__(self) -> None:
+        self.call_count: int = 0
+
+    async def generate(self, question: str, **kwargs) -> GeneratedSQL:
+        self.call_count += 1
+        return await super().generate(question, **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_verified_cache_hit_skips_all_agent_calls():
+    """Cache hit on a Verified query makes zero Planner/SqlGenerator/Aggregator calls.
+
+    AC: Matching a Verified query skips agent inference, serves from stored SQL.
+    AC: Cache re-executes stored SQL against live DB (not a stale result set).
+    """
+    from app.repositories.memory.query_record_repository_memory import (
+        InMemoryQueryRecordRepository,
+    )
+    from app.repositories.memory.schema_repository_memory import InMemorySchemaRepository
+    from app.repositories.memory.query_repository_memory import InMemoryQueryRepository
+    from app.services.ask_service import AskService
+    from app.services.verification_service import VerificationService
+    from app.domain.models import Fingerprint
+
+    # Set up verified store with one clean Verified query
+    qr_repo = InMemoryQueryRecordRepository()
+    v_svc = VerificationService(repo=qr_repo)
+    fps: list[Fingerprint] = []
+    await v_svc.register_query(
+        query_id="q-cached",
+        sql="SELECT COUNT(*) AS total FROM fct_orders LIMIT 100",
+        author="alice",
+        question="how many orders?",
+        fingerprints=fps,
+    )
+    await v_svc.verify("q-cached", "bob", fps)
+
+    schema_repo = InMemorySchemaRepository()
+    query_repo = InMemoryQueryRepository()
+    query_repo.set_return_rows([{"total": 42}])
+
+    counting_gen = CountingSqlGenerator()
+    service = AskService(
+        sql_generator=counting_gen,
+        schema_repository=schema_repo,
+        query_repository=query_repo,
+        query_record_service=v_svc,
+    )
+
+    result = await service.answer("how many orders?")
+
+    assert isinstance(result, Answer)
+    # Stored SQL was executed — fresh data returned
+    assert "42" in result.text
+    # Zero LLM calls (SqlGenerator not called)
+    assert counting_gen.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_drift_to_needs_recheck_bypasses_cache():
+    """After fingerprint drift moves a Verified query to Needs recheck, the same
+    question must NOT hit the cache — the full pipeline must run instead.
+
+    AC: Needs recheck state always falls through to full pipeline.
+    """
+    from app.repositories.memory.query_record_repository_memory import (
+        InMemoryQueryRecordRepository,
+    )
+    from app.repositories.memory.schema_repository_memory import InMemorySchemaRepository
+    from app.repositories.memory.query_repository_memory import InMemoryQueryRepository
+    from app.services.ask_service import AskService
+    from app.services.verification_service import VerificationService
+    from app.domain.models import Fingerprint
+
+    qr_repo = InMemoryQueryRecordRepository()
+    v_svc = VerificationService(repo=qr_repo)
+
+    baseline_fps = [Fingerprint(table="fct_orders", column="status", schema_hash="h1")]
+    await v_svc.register_query(
+        query_id="q-drift",
+        sql="SELECT COUNT(*) AS total FROM fct_orders LIMIT 100",
+        author="alice",
+        question="how many orders?",
+        fingerprints=baseline_fps,
+    )
+    await v_svc.verify("q-drift", "bob", baseline_fps)
+
+    # Simulate schema drift — moves record to Needs recheck
+    drifted_fps = [Fingerprint(table="fct_orders", column="status", schema_hash="h2")]
+    record, reasons = await v_svc.check_drift("q-drift", drifted_fps)
+    assert reasons, "Expected drift to be detected"
+
+    schema_repo = InMemorySchemaRepository()
+    query_repo = InMemoryQueryRepository()
+    query_repo.set_return_rows([{"total": 99}])
+
+    counting_gen = CountingSqlGenerator()
+    service = AskService(
+        sql_generator=counting_gen,
+        schema_repository=schema_repo,
+        query_repository=query_repo,
+        query_record_service=v_svc,
+    )
+
+    result = await service.answer("how many orders?")
+
+    assert isinstance(result, Answer)
+    # Full pipeline ran — SqlGenerator was called at least once
+    assert counting_gen.call_count >= 1
+
+
+# ---------------------------------------------------------------------------
+# BUG-1 regression — verified-query cache dead in production (main.py wiring)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_verified_cache_fires_when_wired_as_main_py_does():
+    """Regression: main.py must pass query_record_service=verification_service to
+    AskService.  Without that kwarg the service has _query_record_service=None and
+    _try_verified_cache always returns None — the full LLM pipeline always runs.
+
+    This test mirrors the AppState construction pattern in main.py: one
+    VerificationService instance is created and shared between AppState AND
+    AskService(query_record_service=).  After fixing main.py a Verified question
+    should hit the cache (SqlGenerator call_count == 0).
+    """
+    from app.repositories.memory.query_record_repository_memory import InMemoryQueryRecordRepository
+    from app.repositories.memory.schema_repository_memory import InMemorySchemaRepository
+    from app.repositories.memory.query_repository_memory import InMemoryQueryRepository
+    from app.services.ask_service import AskService
+    from app.services.verification_service import VerificationService
+    from app.domain.models import Fingerprint
+
+    # Mirror main.py: single VerificationService instance shared with AskService
+    qr_repo = InMemoryQueryRecordRepository()
+    verification_service = VerificationService(repo=qr_repo)
+    fps: list[Fingerprint] = []
+    await verification_service.register_query(
+        query_id="q-main-wiring",
+        sql="SELECT COUNT(*) AS total FROM fct_orders LIMIT 100",
+        author="alice",
+        question="total orders please",
+        fingerprints=fps,
+    )
+    await verification_service.verify("q-main-wiring", "bob", fps)
+
+    schema_repo = InMemorySchemaRepository()
+    query_repo = InMemoryQueryRepository()
+    query_repo.set_return_rows([{"total": 7}])
+
+    counting_gen = CountingSqlGenerator()
+    # The fix: query_record_service= receives the SAME VerificationService that
+    # received the verify() call above.  Pre-fix this kwarg was absent → None.
+    service = AskService(
+        sql_generator=counting_gen,
+        schema_repository=schema_repo,
+        query_repository=query_repo,
+        query_record_service=verification_service,
+    )
+
+    result = await service.answer("total orders please")
+
+    assert isinstance(result, Answer)
+    # Cache hit → LLM pipeline must not have run
+    assert counting_gen.call_count == 0, (
+        "SqlGenerator was called, meaning the cache was NOT consulted — "
+        "check that main.py passes query_record_service=verification_service to AskService"
+    )

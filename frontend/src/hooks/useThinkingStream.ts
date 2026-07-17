@@ -54,7 +54,11 @@ export function useThinkingStream() {
             steps.push(evt)
             if (revealed) setTrace({ steps: [...steps] })
           } else if (evt.type === 'done') {
-            return evt.payload
+            const payload = evt.payload
+            if (payload.type === 'answer') {
+              payload._trace_steps = [...steps]
+            }
+            return payload
           } else {
             throw new Error(evt.message)
           }

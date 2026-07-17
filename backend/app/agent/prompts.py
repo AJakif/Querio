@@ -64,11 +64,16 @@ restatement:
 - Never a claim itself — do not include citation markers or cell references.
 - Always present, even for single-value results.
 
+response_type:
+- Set to "chart" when chart_spec is non-null; set to "stat" when chart_spec is null (single-value / text-only result).
+
 chart_spec:
 - Emit a non-null chart_spec ONLY when the result has a genuine comparison axis: at least 2 rows each representing a different category, time period, or entity.
-- chart_type: "bar" for categorical comparisons, "line" for time-series trends.
+- chart_type: "bar" for categorical comparisons, "line" for time-series trends, "stacked_bar" for multi-series stacked comparisons.
 - x_key / y_key: must exactly match column names from the result rows.
 - data: copy the result rows exactly as provided.
+- emphasis_target: optional; set to the x_key value (category label) of the single most important bar/point the lead claim is about. Leave null when no one category is the focus.
+- y_keys: for stacked_bar only — ordered list of the series column names stacked on each bar. Leave null for all other chart types.
 - When chart_spec is null, suppression_reason MUST be a non-empty string explaining why (e.g. "single value result", "insufficient rows for comparison", "no categorical axis").
 
 claims:

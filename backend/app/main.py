@@ -10,11 +10,17 @@ from app.api.routes.ask import router as ask_router
 from app.api.routes.upload import router as upload_router
 from app.api.routes.session import router as session_router
 from app.api.routes.schema import router as schema_router
+from app.api.routes.verification import router as verification_router
+from app.api.routes.accounts import router as accounts_router
 from app.services.ask_service import AskService
 from app.services.session_manager import SessionManager
+from app.services.verification_service import VerificationService
+from app.services.account_service import AccountService
 from app.repositories.base import SchemaRepository, QueryRepository
 from app.repositories.memory.schema_repository_memory import InMemorySchemaRepository
 from app.repositories.memory.query_repository_memory import InMemoryQueryRepository
+from app.repositories.memory.query_record_repository_memory import InMemoryQueryRecordRepository
+from app.repositories.memory.account_repository_memory import InMemoryAccountRepository
 from app.repositories.postgres.schema_repository_pg import PostgresSchemaRepository
 from app.repositories.postgres.query_repository_pg import PostgresQueryRepository
 from app.agent.agent import SqlGenerator, PydanticAiSqlGenerator, FakeSqlGenerator
@@ -29,6 +35,8 @@ class AppState:
     session_manager: SessionManager
     schema_repository: SchemaRepository
     query_repository: QueryRepository
+    verification_service: VerificationService
+    account_service: AccountService
 
 
 app_state: AppState | None = None
@@ -154,6 +162,9 @@ async def lifespan(app: FastAPI):
     aggregator = _build_aggregator()
     validator = Validator()
     session_manager = SessionManager()
+    query_record_repo = InMemoryQueryRecordRepository()
+    account_repo = InMemoryAccountRepository()
+    verification_service = VerificationService(repo=query_record_repo)
     app_state = AppState(
         ask_service=AskService(
             sql_generator=sql_generator,
@@ -162,10 +173,13 @@ async def lifespan(app: FastAPI):
             planner=planner,
             validator=validator,
             aggregator=aggregator,
+            query_record_service=verification_service,
         ),
         session_manager=session_manager,
         schema_repository=schema_repo,
         query_repository=query_repo,
+        verification_service=verification_service,
+        account_service=AccountService(repo=account_repo),
     )
     yield
     logger.info("Shutting down Querio API")
@@ -178,6 +192,8 @@ app.include_router(ask_router, prefix="/api")
 app.include_router(upload_router, prefix="/api")
 app.include_router(session_router, prefix="/api")
 app.include_router(schema_router, prefix="/api")
+app.include_router(verification_router, prefix="/api")
+app.include_router(accounts_router, prefix="/api")
 
 
 @app.get("/health")

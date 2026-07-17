@@ -28,6 +28,8 @@ class ChartSpecModel(BaseModel):
     x_key: str
     y_key: str
     data: list[dict[str, Any]] = []
+    emphasis_target: str | None = None   # x_key value to render at full saturation (slice 8)
+    y_keys: list[str] | None = None      # ordered series keys for stacked_bar (slice 9)
 
 
 class Headline(BaseModel):
@@ -46,6 +48,7 @@ class Claim(BaseModel):
 
 
 class AnswerSpec(BaseModel):
+    response_type: Literal['stat', 'chart'] = 'stat'  # explicit routing key (GAP-1)
     headline: Headline
     restatement: str
     chart_spec: ChartSpecModel | None = None

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { ChatBubble } from './ChatBubble'
-import type { AnswerResponse, ClarifyingQuestionResponse } from '../types/api'
+import type { AnswerResponse, ClarifyingQuestionResponse, ConfirmFirstResponse } from '../types/api'
 
 describe('ChatBubble — answer', () => {
   const answerMsg: AnswerResponse = {
@@ -99,5 +99,36 @@ describe('ChatBubble — clarifying question', () => {
     buttons.forEach((btn) => {
       expect(btn).toBeDisabled()
     })
+  })
+})
+
+describe('ChatBubble — confirm_first gate', () => {
+  const confirmMsg: ConfirmFirstResponse = {
+    type: 'confirm_first',
+    conversation_id: 'confirm-abc',
+    plan: {
+      ambiguity_score: 0.9,
+      assumptions: [
+        { term: 'recent', resolution: 'last 30 days', alternatives: ['last 7 days'], close_call: true },
+        { term: 'status', resolution: 'delivered', alternatives: [], close_call: false },
+      ],
+      unresolved_terms: [],
+      interpretation: 'Showing recent delivered orders',
+    },
+    scan_cost: 0,
+    gate_reason: 'ambiguity',
+  }
+
+  it('renders assumption chips for each assumption', () => {
+    render(<ChatBubble message={confirmMsg} onConfirm={vi.fn()} />)
+    expect(screen.getByTestId('chip-recent')).toBeInTheDocument()
+    expect(screen.getByTestId('chip-status')).toBeInTheDocument()
+  })
+
+  it('confirm button calls onConfirm with no amendments when nothing edited', () => {
+    const onConfirm = vi.fn()
+    render(<ChatBubble message={confirmMsg} onConfirm={onConfirm} />)
+    fireEvent.click(screen.getByTestId('confirm-button'))
+    expect(onConfirm).toHaveBeenCalledWith('confirm-abc', [])
   })
 })
