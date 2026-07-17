@@ -30,6 +30,11 @@ def _is_date(data_type: str) -> bool:
     return any(hint in lower for hint in _DATE_HINTS)
 
 
+def _is_identifier_name(name: str) -> bool:
+    lower = name.lower()
+    return lower == "id" or lower.endswith("_id") or lower.endswith("_key")
+
+
 def _quote_ident(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
@@ -49,7 +54,9 @@ def _generate_examples(
     numeric_col: str | None,
 ) -> list[ExampleQuestion]:
     dimension_cols = [
-        c.name for c in columns if not _is_numeric(c.data_type) and not _is_date(c.data_type)
+        c.name
+        for c in columns
+        if not _is_numeric(c.data_type) and not _is_date(c.data_type) and not _is_identifier_name(c.name)
     ]
     dimension_col = dimension_cols[0] if dimension_cols else None
     second_dimension_col = dimension_cols[1] if len(dimension_cols) > 1 else None

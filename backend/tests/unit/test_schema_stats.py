@@ -77,8 +77,12 @@ async def test_examples_are_grounded_in_real_schema_columns() -> None:
     assert 4 <= len(summary.examples) <= 6
     joined = " ".join(e.question for e in summary.examples)
     assert "amount" in joined
-    assert "order_id" in joined
     assert "orders" in joined
+    # customer_segment is a genuine categorical dimension and should be picked...
+    assert "customer_segment" in joined
+    # ...while order_id is an identifier column and must never be picked as a
+    # grouping dimension (it produced garbage "by order_id" questions before the fix).
+    assert "order_id" not in joined
     shapes = {e.answer_shape for e in summary.examples}
     assert "number" in shapes
     assert "chart" in shapes
