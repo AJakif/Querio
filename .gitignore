@@ -89,6 +89,11 @@ build/
 .DS_Store
 Thumbs.db
 
+# dbt
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+
 # Other
 *.db
 *.sqlite
