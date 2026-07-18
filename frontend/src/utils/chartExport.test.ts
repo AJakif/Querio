@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { dataToCSV, buildProvenance } from './chartExport'
+import { dataToCSV, buildProvenance, svgElementToString } from './chartExport'
 
 const FIXTURE_DATA: Record<string, unknown>[] = [
   { month: 'Jan', revenue: 2100000 },
@@ -35,5 +35,39 @@ describe('dataToCSV', () => {
     const csv = dataToCSV(FIXTURE_DATA, null)
     expect(csv).not.toContain('Querio')
     expect(csv).not.toContain('badge:')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// svgElementToString — white background + provenance footer (SRS VIZ-6, PRIN-4)
+// ---------------------------------------------------------------------------
+
+describe('svgElementToString', () => {
+  function makeSvg(width = '600', height = '300'): SVGSVGElement {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg') as SVGSVGElement
+    svg.setAttribute('width', width)
+    svg.setAttribute('height', height)
+    return svg
+  }
+
+  it('inserts white background rect when provenance is provided', () => {
+    const provenance = buildProvenance('verified', 3)
+    const result = svgElementToString(makeSvg(), provenance)
+    expect(result).toMatch(/<rect[^>]+fill="#ffffff"/)
+  })
+
+  it('includes data-provenance text footer with badge and product when provenance is provided', () => {
+    const provenance = buildProvenance('verified', 3)
+    const result = svgElementToString(makeSvg(), provenance)
+    expect(result).toContain('data-provenance="true"')
+    expect(result).toContain('Querio')
+    expect(result).toContain('badge: verified')
+  })
+
+  it('omits data-provenance element and preserves original height when provenance is null', () => {
+    const result = svgElementToString(makeSvg('600', '300'), null)
+    expect(result).not.toContain('data-provenance')
+    // height attribute must remain at original value — no footer bump
+    expect(result).toContain('height="300"')
   })
 })

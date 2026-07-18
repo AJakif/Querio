@@ -105,6 +105,41 @@ async def test_semantic_drift_triggers_needs_recheck():
 
 
 @pytest.mark.asyncio
+async def test_export_import_roundtrip_matching_fingerprints():
+    """Round-trip: verified record exported and re-imported with same fingerprints stays verified (SRS VQ-6)."""
+    svc_a = make_service()
+    await svc_a.register_query("q1", "SELECT 1", "alice", BASELINE_FPS)
+    await svc_a.verify("q1", "bob", BASELINE_FPS)
+
+    portable = await svc_a.export_portable("q1")
+
+    svc_b = make_service()
+    imported = await svc_b.import_portable(portable, current_fingerprints=BASELINE_FPS)
+
+    assert imported.badge_state() == BadgeState.verified
+    assert imported.id == "q1"
+    assert imported.sql == "SELECT 1"
+    # Exactly 1 history event (the verify); no needs_recheck appended
+    assert len(imported.history) == 1
+
+
+@pytest.mark.asyncio
+async def test_import_marks_needs_recheck_on_schema_mismatch():
+    """Imported verified record with differing schema_hash arrives as needs_recheck (SRS VQ-6)."""
+    svc_a = make_service()
+    await svc_a.register_query("q1", "SELECT 1", "alice", BASELINE_FPS)
+    await svc_a.verify("q1", "bob", BASELINE_FPS)
+
+    portable = await svc_a.export_portable("q1")
+
+    svc_b = make_service()
+    stale_fps = [fp("orders", "status", "hash_v2", "vals_v1")]  # schema_hash differs
+    imported = await svc_b.import_portable(portable, current_fingerprints=stale_fps)
+
+    assert imported.badge_state() == BadgeState.needs_recheck
+
+
+@pytest.mark.asyncio
 async def test_reverify_after_needs_recheck_restores_verified():
     """AC (end-to-end): schema change → Needs recheck → re-verify → Verified."""
     svc = make_service()
