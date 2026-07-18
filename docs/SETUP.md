@@ -50,7 +50,7 @@ Linux/macOS:
 `docker compose up` runs the full pipeline automatically:
 
 1. **Postgres** starts and waits for health.
-2. **Seed** (`python scripts/load_raw.py`) creates the `raw` schema and populates 9 tables with deterministic Olist-like data.
+2. **Seed** (`python scripts/load_raw.py`) creates the empty `raw` schema (9 tables, matching the Olist Brazilian E-Commerce structure) with no data.
 3. **dbt** runs `dbt run`, which transforms `raw` → `marts` schema producing two analytical models:
    - `fct_orders` — order-level fact table (orders + items + payments)
    - `dim_customers` — customer dimension with aggregated order metrics
@@ -68,7 +68,6 @@ The agent queries the clean `marts` schema tables — not the raw normalized tab
 # .env
 APP_ENV=dev
 DATABASE_URL=postgresql://querio:querio@localhost:5432/querio
-SEED_DATABASE=false
 DB_SCHEMA=marts
 MODEL_PROVIDER=openai
 MODEL_NAME=openai:gpt-4o-mini
@@ -78,10 +77,10 @@ LOG_LEVEL=
 QUERIO_SECRETS_FILE=.env.secrets
 ```
 
-`SEED_DATABASE` controls whether the Docker `seed` service loads Querio's bundled
-deterministic demo dataset. It defaults to `false`, so your database is not
-populated with demo rows automatically. Set `SEED_DATABASE=true` when you want
-the included demo data; after changing it, recreate the seed and dbt services.
+The `seed` service only creates the empty `raw` schema (so dbt has tables to
+build `marts` from) — it does not load any demo data. Load your own data via
+the in-chat upload flow, or `INSERT` into the `raw` tables directly if you
+want a persistent default dataset instead of a per-session upload.
 
 ```bash
 # .env.secrets

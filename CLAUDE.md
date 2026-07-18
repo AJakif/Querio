@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Querio — a natural-language-to-SQL chat app. The agent turns a plain-English question into a guardrail-validated, read-only SQL query against a Postgres `marts` schema (dbt-transformed from Olist e-commerce data), executes it, and returns an answer plus an optional chart. Users can also upload their own CSV/JSON to query against instead of the seeded dataset.
+Querio — a natural-language-to-SQL chat app. The agent turns a plain-English question into a guardrail-validated, read-only SQL query against a Postgres `marts` schema (dbt-transformed from whatever is loaded into `raw`), executes it, and returns an answer plus an optional chart. Users upload their own CSV/JSON in-chat to query against a session-scoped schema; the base `raw`/`marts` schema ships empty (no bundled demo dataset) and is populated only if you load your own data into it directly.
 
 ## Commands
 
@@ -65,7 +65,7 @@ dbt test
 React (chat + upload + chart) -> FastAPI (REST) -> Pydantic AI agent -> guardrail validator -> Postgres (marts schema)
 ```
 
-Data flow: `raw` schema (9 Olist tables, seeded by `backend/scripts/load_raw.py`) -> dbt transforms -> `marts` schema (`fct_orders`, `dim_customers`) is what the agent actually queries. Airflow runs a scheduled refresh DAG (`backend/app/orchestration/scheduled_data_refresh_dag.py`, mounted into `infra/airflow/dags`) that re-runs the raw->marts pipeline.
+Data flow: `raw` schema (9 tables matching the Olist Brazilian E-Commerce structure, created empty by `backend/scripts/load_raw.py`) -> dbt transforms -> `marts` schema (`fct_orders`, `dim_customers`) is what the agent actually queries. Airflow runs a scheduled refresh DAG (`backend/app/orchestration/scheduled_data_refresh_dag.py`, mounted into `infra/airflow/dags`) that re-runs `dbt run`/`dbt test` over whatever is currently in `raw`.
 
 **The agent never talks to Postgres directly.** Every LLM-generated query passes through `app/guardrails/sql_validator.py` (SELECT-only, row cap, timeout) before being handed to a query repository. Keep that boundary — don't let generated SQL bypass the validator on any new code path.
 

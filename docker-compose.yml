@@ -24,7 +24,6 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://querio:querio@postgres:5432/querio
-      SEED_DATABASE: ${SEED_DATABASE:-false}
     command: python scripts/load_raw.py
 
   dbt:

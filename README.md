@@ -42,6 +42,20 @@ Detailed setup, model configuration, and helper scripts → [`docs/SETUP.md`](./
 - Every generated query passes through a guardrail validator — `SELECT`-only, row cap, timeout.
 - Swap the underlying LLM (Claude / OpenAI / local via Ollama) with a single config change (`MODEL_PROVIDER=` env variable).
 
+## Screenshots
+
+Landing view — dataset summary and suggested starter questions.
+<img src="./Images/screenshot_landing.png" alt="Querio landing view — dataset summary and suggested starter questions" style="width: 100%; max-width: 900px; border-radius: 12px; margin: 12px 0; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
+
+Answer view — verification badge, computed headline, and the show-the-work trace with generated SQL and cost estimate.
+<img src="./Images/screenshot_answer.png" alt="Querio answer view — verification badge, computed headline, and the show-the-work trace with generated SQL and cost estimate" style="width: 100%; max-width: 900px; border-radius: 12px; margin: 12px 0; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
+
+Upload flow — schema preview with inferred column types, null %, and value distributions before confirming a CSV/JSON upload.
+<img src="./Images/screenshot_upload_schema.jpg" alt="Querio upload schema preview — inferred column types, null percentages, and value distributions" style="width: 100%; max-width: 900px; border-radius: 12px; margin: 12px 0; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
+
+Multi-agent pipeline mid-flight — Planner, SQL Generator, Validator, and Aggregator working through a follow-up question over an uploaded dataset.
+<img src="./Images/screenshot_pipeline_trace.jpg" alt="Querio multi-agent pipeline running — Planner, SQL Generator, Validator, and Aggregator stages in progress" style="width: 100%; max-width: 900px; border-radius: 12px; margin: 12px 0; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
+
 ## Verified answers & the workbench
 
 - **Badge lifecycle:** answers carry a verification badge — Verified (by a named reviewer), Needs recheck (if underlying schema drifts), Disputed (flagged by any user), or Unverified (new query). Verification is append-only; staleness is automatic, dependency-driven.
@@ -77,7 +91,7 @@ Most "AI chatbot" portfolio demos do RAG over documents. Querio does something h
 
 ## Data refresh and scheduling
 
-The Airflow UI runs at `http://localhost:8081`. A scheduled DAG named `scheduled_data_refresh` runs on an hourly schedule, executing the raw-to-marts pipeline (backed by `append_synthetic_orders.py` for data generation, `dbt run` for transformation). Check the Airflow UI for DAG run history, logs, and manual triggers.
+The Airflow UI runs at `http://localhost:8081`. A scheduled DAG named `scheduled_data_refresh` runs on an hourly schedule, re-running `dbt run` and `dbt test` over whatever is currently in the `raw` schema so `marts` stays in sync. Check the Airflow UI for DAG run history, logs, and manual triggers.
 
 ---
 

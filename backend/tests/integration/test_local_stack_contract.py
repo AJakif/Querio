@@ -121,5 +121,5 @@ class TestReviewerDocsContract:
 
         assert "http://localhost:8081" in readme
         assert "scheduled_data_refresh" in readme
-        assert "append_synthetic_orders.py" in readme
+        assert "dbt run" in readme
         assert "run history" in readme.lower()
