@@ -1,6 +1,17 @@
 from datetime import datetime
 
 from scripts.append_synthetic_orders import generate_incremental_refresh_batch
+from scripts.load_raw import seed_database_enabled
+
+
+def test_seed_database_is_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("SEED_DATABASE", raising=False)
+    assert seed_database_enabled() is False
+
+
+def test_seed_database_accepts_true_values(monkeypatch):
+    monkeypatch.setenv("SEED_DATABASE", "true")
+    assert seed_database_enabled() is True
 
 
 def test_incremental_refresh_batch_creates_new_order_ids_and_future_timestamps():

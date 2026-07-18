@@ -68,6 +68,7 @@ The agent queries the clean `marts` schema tables — not the raw normalized tab
 # .env
 APP_ENV=dev
 DATABASE_URL=postgresql://querio:querio@localhost:5432/querio
+SEED_DATABASE=false
 DB_SCHEMA=marts
 MODEL_PROVIDER=openai
 MODEL_NAME=openai:gpt-4o-mini
@@ -76,6 +77,11 @@ OLLAMA_BASE_URL=http://localhost:11434/v1
 LOG_LEVEL=
 QUERIO_SECRETS_FILE=.env.secrets
 ```
+
+`SEED_DATABASE` controls whether the Docker `seed` service loads Querio's bundled
+deterministic demo dataset. It defaults to `false`, so your database is not
+populated with demo rows automatically. Set `SEED_DATABASE=true` when you want
+the included demo data; after changing it, recreate the seed and dbt services.
 
 ```bash
 # .env.secrets

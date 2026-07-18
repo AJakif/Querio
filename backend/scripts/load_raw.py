@@ -21,6 +21,13 @@ DSN = os.environ.get("DATABASE_URL", "postgresql://querio:querio@localhost:5432/
 
 SEED = 42
 
+
+def seed_database_enabled() -> bool:
+    """Return whether the bundled deterministic demo dataset should be loaded."""
+    return os.environ.get("SEED_DATABASE", "false").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
 BRAZILIAN_STATES = [
     ("SP", "São Paulo"), ("RJ", "Rio de Janeiro"), ("MG", "Minas Gerais"),
     ("RS", "Rio Grande do Sul"), ("PR", "Paraná"), ("BA", "Bahia"),
@@ -471,6 +478,10 @@ def _build_insert(table: str, rows: list[dict]) -> str:
 
 
 def main():
+    if not seed_database_enabled():
+        print("SEED_DATABASE is disabled; skipping demo database seed.")
+        return
+
     rng = random.Random(SEED)
 
     print("Generating data...")
