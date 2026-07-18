@@ -111,21 +111,23 @@ If hosted provider API keys are blank, Querio falls back to its built-in fake SQ
 
 Querio's agent pipeline chains several structured-output calls per question (ambiguity scoring, SQL generation, cost/fingerprint validation, AnswerSpec assembly with typed chart specs and citations), so the local model needs reliable function-calling / structured-output support, not just general chat quality — this is where small local models tend to fall apart first.
 
-**Recommended model: `qwen2.5:7b`.** It has meaningfully better structured-output/tool-calling reliability than the repo's current default (`llama3.1:8b`) at a comparable footprint (~4.7GB Q4). Avoid going smaller (`llama3.2:3b`, `phi3-mini`, etc.) — sub-7B models tend to silently drift on JSON shape across a multi-step tool-call chain rather than fail obviously.
+**Minimum recommendation: `gemma4:e4b`.** In practice this is the smallest model that reliably completes the full pipeline (Planner → SQL Generator → Validator → Aggregator) with a proper structured AnswerSpec — badge, headline, restatement, chart/claims when applicable — instead of silently degrading to a plain-text fallback answer. It's a larger download (~9.6GB) and noticeably slower per call than `qwen2.5:7b` on CPU, so expect chart-eligible answers (which require a more complex Aggregator response) to take several minutes on modest hardware; budget your timeouts accordingly.
+
+`qwen2.5:7b` (~4.7GB Q4) is a faster, lighter fallback with meaningfully better structured-output/tool-calling reliability than the repo's original default (`llama3.1:8b`), but it degrades to the plain-text fallback answer noticeably more often than `gemma4:e4b` on the Aggregator's structured-output step — expect fewer full AnswerCards. Avoid going smaller still (`llama3.2:3b`, `phi3-mini`, etc.) — sub-7B models tend to silently drift on JSON shape across a multi-step tool-call chain rather than fail obviously.
 
 ```bash
-ollama pull qwen2.5:7b
+ollama pull gemma4:e4b
 ```
 
 Then set in `.env` (or `.env.secrets` is not needed here — Ollama requires no API key):
 
 ```bash
 MODEL_PROVIDER=ollama
-OLLAMA_MODEL=qwen2.5:7b
+OLLAMA_MODEL=gemma4:e4b
 OLLAMA_BASE_URL=http://localhost:11434/v1
 ```
 
-`scripts/setup.sh` / `scripts/setup.ps1` auto-detect a running Ollama daemon and default `MODEL_PROVIDER=ollama` for a fresh `.env`, but they don't override `OLLAMA_MODEL` — it's still worth setting `OLLAMA_MODEL=qwen2.5:7b` by hand instead of the generated default (`llama3.1`).
+`scripts/setup.sh` / `scripts/setup.ps1` auto-detect a running Ollama daemon and default `MODEL_PROVIDER=ollama` for a fresh `.env`, but they don't override `OLLAMA_MODEL` — it's still worth setting `OLLAMA_MODEL=gemma4:e4b` by hand instead of the generated default (`llama3.1`).
 
 ## Logging
 
