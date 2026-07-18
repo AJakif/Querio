@@ -31,10 +31,11 @@ class PydanticAiPlanner(Planner):
         openai_api_key: str | None = None,
         anthropic_api_key: str | None = None,
         ollama_base_url: str | None = None,
+        ollama_num_ctx: int | None = None,
     ):
         logger.info("Initializing Pydantic AI planner", extra={"model_name": model_name})
         self._agent = PydanticAgent(
-            _build_model(model_name, openai_api_key, anthropic_api_key, ollama_base_url),
+            _build_model(model_name, openai_api_key, anthropic_api_key, ollama_base_url, ollama_num_ctx),
             system_prompt=PLANNER_PROMPT,
             output_type=PlanResult,
             deps_type=SchemaRepository,

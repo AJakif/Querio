@@ -39,9 +39,13 @@ logger = get_logger("api.ask")
 # Local CPU-bound model backends (e.g. Ollama) can take well over a minute for the
 # multi-agent pipeline (planner -> SQL gen -> validator -> aggregator), each a
 # separate structured-output round trip - 60s clips those runs mid-flight.
-ASK_TIMEOUT_SECONDS = 180.0
+ASK_TIMEOUT_SECONDS = 600.0
 # Poll interval while waiting for pipeline step events / client disconnect checks.
 SSE_POLL_INTERVAL_SECONDS = 0.1
+# Idle SSE comment sent when no real step has fired in a while, so nginx's
+# proxy_read_timeout (300s) never sees a silent gap during a long single LLM call
+# (CPU-bound Ollama round trips can run well past that with zero intermediate output).
+SSE_HEARTBEAT_INTERVAL_SECONDS = 15.0
 
 _TIMEOUT_MESSAGE = (
     "Sorry, that request took too long to answer. Please try again or check that "
@@ -186,28 +190,37 @@ async def ask_stream(
 
     async def event_generator():
         task = asyncio.ensure_future(run_pipeline())
+        started_at = asyncio.get_running_loop().time()
+        last_sent_at = started_at
         try:
             while not task.done():
                 if await request.is_disconnected():
                     task.cancel()
                     return
+
+                now = asyncio.get_running_loop().time()
+                if now - started_at > ASK_TIMEOUT_SECONDS:
+                    task.cancel()
+                    yield _sse_event("error", {"message": "Request timed out"})
+                    return
+
                 try:
                     stage, detail = await asyncio.wait_for(queue.get(), timeout=SSE_POLL_INTERVAL_SECONDS)
                     yield _sse_event("step", {"stage": stage, "detail": detail})
+                    last_sent_at = asyncio.get_running_loop().time()
                 except asyncio.TimeoutError:
+                    now = asyncio.get_running_loop().time()
+                    if now - last_sent_at > SSE_HEARTBEAT_INTERVAL_SECONDS:
+                        yield ": keep-alive\n\n"
+                        last_sent_at = now
                     continue
 
             while not queue.empty():
                 stage, detail = queue.get_nowait()
                 yield _sse_event("step", {"stage": stage, "detail": detail})
 
-            try:
-                result = await asyncio.wait_for(task, timeout=ASK_TIMEOUT_SECONDS)
-            except asyncio.TimeoutError:
-                yield _sse_event("error", {"message": "Request timed out"})
-                return
-
-            payload = _build_response(result, request_id).model_dump()
+            result = await task
+            payload = _build_response(result, request_id).model_dump(mode="json")
             yield _sse_event("done", payload)
         except asyncio.CancelledError:
             raise
