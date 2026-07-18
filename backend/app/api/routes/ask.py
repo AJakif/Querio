@@ -36,9 +36,17 @@ router = APIRouter()
 logger = get_logger("api.ask")
 
 # Overall wall-clock budget for a single /ask request (streaming or not).
-ASK_TIMEOUT_SECONDS = 60.0
+# Local CPU-bound model backends (e.g. Ollama) can take well over a minute for the
+# multi-agent pipeline (planner -> SQL gen -> validator -> aggregator), each a
+# separate structured-output round trip - 60s clips those runs mid-flight.
+ASK_TIMEOUT_SECONDS = 180.0
 # Poll interval while waiting for pipeline step events / client disconnect checks.
 SSE_POLL_INTERVAL_SECONDS = 0.1
+
+_TIMEOUT_MESSAGE = (
+    "Sorry, that request took too long to answer. Please try again or check that "
+    "your model provider is responding."
+)
 
 
 async def get_ask_service() -> AskService:
@@ -87,18 +95,22 @@ async def ask(
     )
     session_schema, context_note, schema_repo_override = _resolve_session(body.session_id)
 
-    result = await asyncio.wait_for(
-        service.answer(
-            question=body.question,
-            conversation_id=body.conversation_id,
-            clarification_answer=body.clarification_answer,
-            request_id=request_id,
-            session_schema=session_schema,
-            context_note=context_note,
-            schema_repo_override=schema_repo_override,
-        ),
-        timeout=ASK_TIMEOUT_SECONDS,
-    )
+    try:
+        result = await asyncio.wait_for(
+            service.answer(
+                question=body.question,
+                conversation_id=body.conversation_id,
+                clarification_answer=body.clarification_answer,
+                request_id=request_id,
+                session_schema=session_schema,
+                context_note=context_note,
+                schema_repo_override=schema_repo_override,
+            ),
+            timeout=ASK_TIMEOUT_SECONDS,
+        )
+    except (TimeoutError, asyncio.CancelledError):
+        logger.warning("Ask request timed out", extra={"request_id": request_id})
+        result = Answer(text=_TIMEOUT_MESSAGE, conversation_id=body.conversation_id)
 
     return _build_response(result, request_id)
 
@@ -119,14 +131,18 @@ async def ask_confirm(
         },
     )
     amendments = [(a.term, a.resolution) for a in body.amendments]
-    result = await asyncio.wait_for(
-        service.answer_confirmed(
-            confirm_id=body.conversation_id,
-            amendments=amendments,
-            request_id=request_id,
-        ),
-        timeout=ASK_TIMEOUT_SECONDS,
-    )
+    try:
+        result = await asyncio.wait_for(
+            service.answer_confirmed(
+                confirm_id=body.conversation_id,
+                amendments=amendments,
+                request_id=request_id,
+            ),
+            timeout=ASK_TIMEOUT_SECONDS,
+        )
+    except (TimeoutError, asyncio.CancelledError):
+        logger.warning("Confirm request timed out", extra={"request_id": request_id})
+        result = Answer(text=_TIMEOUT_MESSAGE, conversation_id=body.conversation_id)
     return _build_response(result, request_id)
 
 
@@ -392,4 +408,7 @@ def _build_answer_response(result: Answer, request_id: str) -> AnswerResponse:
         answer_spec=answer_spec_response,
         dropped_claim_count=result.answer_spec.dropped_claim_count if result.answer_spec else 0,
         result_rows=result.result_rows,
+        verifier_name=result.verifier_name,
+        badge_state=result.badge_state,
+        query_id=result.query_id,
     )

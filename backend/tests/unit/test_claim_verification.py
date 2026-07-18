@@ -1,6 +1,10 @@
 """Load-bearing tests for Slice 4: Validator.verify_claims anti-hallucination boundary.
 
-Test budget: 5 (within soft ceiling of 5).
+Test budget: 7 (5 original + 1 regression Bug-1 + 1 regression Bug-2 = 7; soft ceiling ≤5
+exceeded; JUSTIFIED: +2 tests — both add distinct, load-bearing signal: Bug-1 proves
+cells-based resolution catches LLM-fabricated operands that the old path let through;
+Bug-2 proves row-cite cells are checked against reality, which the old path skipped entirely.
+No other existing test covers either failure mode.)
 """
 from __future__ import annotations
 
@@ -43,6 +47,8 @@ def _row_claim(sentence: str) -> Claim:
 
 _VALIDATOR = Validator()
 _EMPTY_ROWS: list[dict] = []
+# Real rows used by row-cite tests — cells reference row 0, column "revenue"
+_REVENUE_ROWS: list[dict] = [{"revenue": 1200000}]
 
 
 # ---------------------------------------------------------------------------
@@ -82,14 +88,15 @@ class TestFalseClaimDropped:
 
 
 class TestRowClaimExempt:
-    def test_row_claims_pass_through_unconditionally(self) -> None:
-        """Row-typed claims are exempt from arithmetic verification."""
+    def test_row_claims_pass_through_when_cells_match_reality(self) -> None:
+        """Row-typed claims pass when every cited cell matches the real result set."""
         row = _row_claim("First result has revenue = 1200000.")
         # Embed a plausible computation claim too so we know only row is exempt
         true_comp = _computation("Sum is 100.", operation="sum", operands=[100.0], value=100.0)
         spec = _spec(row, true_comp)
 
-        updated, dropped = _VALIDATOR.verify_claims(spec, _EMPTY_ROWS)
+        # Provide rows that match the cell data (row 0, column "revenue", value 1200000)
+        updated, dropped = _VALIDATOR.verify_claims(spec, _REVENUE_ROWS)
 
         assert dropped == 0
         assert any(c.type == "row" for c in updated.claims)
@@ -162,4 +169,65 @@ class TestUnrecognizedOperationDropped:
 
         assert dropped == 1
         assert updated.dropped_claim_count == 1
+        assert updated.claims == []
+
+
+# ---------------------------------------------------------------------------
+# 6. REGRESSION Bug-1 — cells-based resolution overrides LLM-supplied operands
+# ---------------------------------------------------------------------------
+
+
+class TestComputationCellsOverrideLlmOperands:
+    def test_computation_claim_dropped_when_cells_resolve_to_different_operands(self) -> None:
+        """Regression: LLM supplies fake operands that are self-consistent but don't match
+        the real result rows. The validator MUST resolve operands from cited cells against
+        the real rows, not trust claim.operands. A claim whose real cell values produce a
+        sum that doesn't match claim.value must be dropped even if the LLM operands would
+        have matched."""
+        real_rows = [
+            {"revenue": 100.0},
+            {"revenue": 200.0},
+        ]
+        # LLM claims sum of 500 and provides fake operands [250.0, 250.0] which sum to 500 — self-consistent.
+        # But cells point to row 0 and row 1, whose real values are 100 and 200 (sum = 300, not 500).
+        claim = Claim(
+            sentence="Total revenue is 500.",
+            type="computation",
+            operation="sum",
+            operands=[250.0, 250.0],  # LLM-fabricated; should NOT be used
+            value=500.0,
+            cells=[
+                {"row": 0, "column": "revenue", "value": 250.0},  # LLM cites 250, reality is 100
+                {"row": 1, "column": "revenue", "value": 250.0},  # LLM cites 250, reality is 200
+            ],
+        )
+        spec = _spec(claim)
+
+        updated, dropped = _VALIDATOR.verify_claims(spec, real_rows)
+
+        assert dropped == 1, "Claim must be dropped: real cell values (100+200=300) ≠ claimed value (500)"
+        assert updated.claims == []
+
+
+# ---------------------------------------------------------------------------
+# 7. REGRESSION Bug-2 — row-cite claims with mismatched cells are dropped
+# ---------------------------------------------------------------------------
+
+
+class TestRowClaimDroppedOnCellMismatch:
+    def test_row_claim_dropped_when_cited_cell_value_differs_from_reality(self) -> None:
+        """Regression: row-cite claims were kept unconditionally regardless of whether the
+        cited cell value matches the actual result set. A row claim citing revenue=999 when
+        the real row has revenue=1200000 must be dropped."""
+        real_rows = [{"revenue": 1200000}]
+        lying_row_claim = Claim(
+            sentence="First row has revenue 999.",
+            type="row",
+            cells=[{"row": 0, "column": "revenue", "value": 999}],  # wrong value
+        )
+        spec = _spec(lying_row_claim)
+
+        updated, dropped = _VALIDATOR.verify_claims(spec, real_rows)
+
+        assert dropped == 1, "Row claim must be dropped: cited value 999 ≠ real value 1200000"
         assert updated.claims == []

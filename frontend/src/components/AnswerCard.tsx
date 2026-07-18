@@ -8,6 +8,7 @@ import { CitedSummary } from './CitedSummary'
 interface AnswerCardProps {
   spec: AnswerSpec
   badge: BadgeState
+  verifierName?: string | null
   onSend?: (question: string) => void
   sql?: { sql: string; explanation: string } | null
   validation?: ValidationResultResponse | null
@@ -32,12 +33,13 @@ const BADGE_CONFIG: Record<BadgeState, BadgeConfig> = {
   disputed: { icon: '✗', label: 'Disputed', className: 'badge--disputed' },
 }
 
-function BadgeRow({ badge }: { badge: BadgeState }) {
+function BadgeRow({ badge, verifierName }: { badge: BadgeState; verifierName?: string | null }) {
   const { icon, label, className } = BADGE_CONFIG[badge]
+  const displayLabel = badge === 'verified' && verifierName ? `Verified by ${verifierName}` : label
   return (
     <div data-testid="badge-row" className={`answer-card__badge ${className}`}>
       <span className="badge__icon" aria-hidden="true">{icon}</span>
-      <span className="badge__label">{label}</span>
+      <span className="badge__label">{displayLabel}</span>
     </div>
   )
 }
@@ -338,7 +340,7 @@ function WorkbenchToggle({
 // so specs that omit the field (e.g. slice-7 test fixtures) stay on ROUTE-1.
 // ---------------------------------------------------------------------------
 
-export function AnswerCard({ spec, badge, onSend, sql, validation, traceSteps, resultRows }: AnswerCardProps) {
+export function AnswerCard({ spec, badge, verifierName, onSend, sql, validation, traceSteps, resultRows }: AnswerCardProps) {
   const responseType =
     spec.response_type ?? (spec.chart_spec ? 'chart' : 'stat')
 
@@ -352,7 +354,7 @@ export function AnswerCard({ spec, badge, onSend, sql, validation, traceSteps, r
   return (
     <div data-testid="answer-card" className="answer-card">
       {/* Fixed order: badge → assumption → headline (normative per Blueprint) */}
-      <BadgeRow badge={badge} />
+      <BadgeRow badge={badge} verifierName={verifierName} />
       <AssumptionLine assumptions={spec.assumptions_ref} />
       <HeadlineStat headline={spec.headline} />
       {responseType === 'chart' && spec.chart_spec && (
@@ -370,11 +372,9 @@ export function AnswerCard({ spec, badge, onSend, sql, validation, traceSteps, r
           onCitationTargetChange={setCitationTarget}
         />
       )}
-      {responseType === 'chart' && (
-        <p data-testid="answer-restatement" className="answer-card__restatement">
-          {spec.restatement}
-        </p>
-      )}
+      <p data-testid="answer-restatement" className="answer-card__restatement">
+        {spec.restatement}
+      </p>
 
       {/* Follow-ups + export actions row */}
       <div className="answer-card__actions">

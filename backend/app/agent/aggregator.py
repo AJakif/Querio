@@ -123,6 +123,7 @@ class FakeAggregator(Aggregator):
             )
 
         return AnswerSpec(
+            response_type="chart" if chart_spec is not None else "stat",
             headline=headline,
             restatement=f"Computed {question}.",
             chart_spec=chart_spec,
