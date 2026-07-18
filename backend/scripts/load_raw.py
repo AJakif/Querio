@@ -478,28 +478,30 @@ def _build_insert(table: str, rows: list[dict]) -> str:
 
 
 def main():
-    if not seed_database_enabled():
-        print("SEED_DATABASE is disabled; skipping demo database seed.")
-        return
-
-    rng = random.Random(SEED)
-
-    print("Generating data...")
-    customers = _generate_customers(rng, 1000)
-    sellers = _generate_sellers(rng, 50)
-    products = _generate_products(rng)
-    geolocation = _generate_geolocation(rng)
-    categories = _generate_categories(rng)
-    orders, order_items, order_payments, order_reviews = _generate_orders(
-        rng, 5000, customers, products, sellers,
-    )
-
     conn = psycopg2.connect(DSN)
     try:
         with conn.cursor() as cur:
             print("Creating raw schema...")
             cur.execute(RAW_SCHEMA_SQL)
+        conn.commit()
 
+        if not seed_database_enabled():
+            print("SEED_DATABASE is disabled; raw schema created empty (no demo rows).")
+            return
+
+        rng = random.Random(SEED)
+
+        print("Generating data...")
+        customers = _generate_customers(rng, 1000)
+        sellers = _generate_sellers(rng, 50)
+        products = _generate_products(rng)
+        geolocation = _generate_geolocation(rng)
+        categories = _generate_categories(rng)
+        orders, order_items, order_payments, order_reviews = _generate_orders(
+            rng, 5000, customers, products, sellers,
+        )
+
+        with conn.cursor() as cur:
             print("Seeding raw.customers...")
             cur.execute(_build_insert("raw.customers", customers))
 
