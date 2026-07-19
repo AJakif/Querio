@@ -37,6 +37,7 @@ export function useThinkingStream() {
       conversationId?: string,
       clarificationAnswer?: string,
       sessionId?: string,
+      chatSessionId?: string,
     ): Promise<AskResponse> => {
       const steps: StepEvent[] = []
       let revealed = false
@@ -49,7 +50,7 @@ export function useThinkingStream() {
           }, REVEAL_THRESHOLD_MS)
 
       try {
-        for await (const evt of streamAskQuestion(question, conversationId, clarificationAnswer, sessionId)) {
+        for await (const evt of streamAskQuestion(question, conversationId, clarificationAnswer, sessionId, chatSessionId)) {
           if (evt.type === 'step') {
             steps.push(evt)
             if (revealed) setTrace({ steps: [...steps] })

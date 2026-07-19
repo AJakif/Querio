@@ -187,6 +187,23 @@ class Account:
 
 
 @dataclass
+class ChatSession:
+    id: str
+    account_username: str | None
+    upload_session_id: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass
+class StoredTurn:
+    turn_index: int
+    question_text: str
+    answer_json: dict[str, Any]
+    created_at: datetime
+
+
+@dataclass
 class SchemaSummary:
     table_name: str
     row_count: int

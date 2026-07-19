@@ -164,3 +164,34 @@ export interface SchemaSummaryResponse {
   headline_value: number
   examples: ExampleQuestionResponse[]
 }
+
+// Chat session persistence types — mirror backend/app/schemas/chat_session.py
+
+export interface ChatSessionResponse {
+  chat_session_id: string
+  account_username: string | null
+  upload_session_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface StoredTurnResponse {
+  turn_index: number
+  question: string
+  answer: AnswerResponse
+  created_at: string
+}
+
+export interface ChatSessionHistoryResponse {
+  session: ChatSessionResponse
+  turns: StoredTurnResponse[]
+}
+
+export interface ChatSessionSummaryResponse {
+  chat_session_id: string
+  account_username: string | null
+  created_at: string
+  updated_at: string
+  turn_count: number
+  preview_question: string | null
+}
