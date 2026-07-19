@@ -60,6 +60,28 @@ class TestValidateSql:
         assert "query" not in error.lower()
         assert len(error) > 10
 
+    def test_oversized_limit_is_capped(self):
+        sql, error = validate_sql("SELECT * FROM orders LIMIT 500000", max_rows=1000)
+        assert error is None
+        assert "LIMIT 1000" in sql
+        assert "500000" not in sql
+
+    def test_limit_with_offset_offset_preserved(self):
+        sql, error = validate_sql("SELECT * FROM orders LIMIT 500000 OFFSET 20", max_rows=1000)
+        assert error is None
+        assert "LIMIT 1000" in sql
+        assert "OFFSET 20" in sql
+
+    def test_subquery_limit_is_not_capped(self):
+        # Outer query has no LIMIT; subquery has LIMIT 999999 — only outer is capped/added.
+        sql, error = validate_sql(
+            "SELECT * FROM (SELECT * FROM orders LIMIT 999999) sub",
+            max_rows=1000,
+        )
+        assert error is None
+        assert "LIMIT 1000" in sql
+        assert "999999" in sql
+
     def test_forbidden_keyword_error_is_friendly(self):
         _, error = validate_sql("SELECT * FROM orders; DROP TABLE customers")
         assert error is not None

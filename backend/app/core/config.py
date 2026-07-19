@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     anthropic_api_key_file: str | None = None
     querio_secrets_file: str = str(PROJECT_ROOT / ".env.secrets")
     log_level: str | None = None
-    max_rows: int = 1000
+    max_result_rows: int = 1000
     query_timeout_ms: int = 15000
     db_schema: str = "marts"
     ambiguity_threshold: float = 0.6
