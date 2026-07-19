@@ -4,6 +4,7 @@ Mirrors the Planner/SqlGenerator ABC + PydanticAi impl + Fake impl pattern.
 No schema tool access needed — the aggregator receives the question, result rows,
 and the PlanResult from Slice 1, and produces an AnswerSpec.
 """
+
 from __future__ import annotations
 
 import json
@@ -15,6 +16,7 @@ from pydantic_ai import Agent as PydanticAgent
 from app.agent.agent import _build_model
 from app.agent.contracts import AnswerSpec, Claim, ChartSpecModel, Headline, PlanResult
 from app.agent.prompt_builder import build_dynamic_state, build_static_prefix
+from app.agent.prompt_gate import truncate_for_prompt
 from app.agent.prompts import AGGREGATOR_INSTRUCTIONS
 from app.core.logging import get_logger
 
@@ -29,8 +31,7 @@ class Aggregator(ABC):
         question: str,
         rows: list[dict],
         plan: PlanResult,
-    ) -> AnswerSpec:
-        ...
+    ) -> AnswerSpec: ...
 
 
 class PydanticAiAggregator(Aggregator):
@@ -42,10 +43,18 @@ class PydanticAiAggregator(Aggregator):
         ollama_base_url: str | None = None,
         ollama_num_ctx: int | None = None,
     ):
-        logger.info("Initializing Pydantic AI aggregator", extra={"model_name": model_name})
+        logger.info(
+            "Initializing Pydantic AI aggregator", extra={"model_name": model_name}
+        )
         self._system_prompt = build_static_prefix() + "\n\n" + AGGREGATOR_INSTRUCTIONS
         self._agent = PydanticAgent(
-            _build_model(model_name, openai_api_key, anthropic_api_key, ollama_base_url, ollama_num_ctx),
+            _build_model(
+                model_name,
+                openai_api_key,
+                anthropic_api_key,
+                ollama_base_url,
+                ollama_num_ctx,
+            ),
             system_prompt=self._system_prompt,
             output_type=AnswerSpec,
         )
@@ -64,7 +73,9 @@ class PydanticAiAggregator(Aggregator):
         result = await self._agent.run(user_msg)
         output = getattr(result, "output", None) or getattr(result, "data", None)
         if output is None:
-            raise AttributeError("Aggregator AgentRunResult contained no 'output' or 'data'.")
+            raise AttributeError(
+                "Aggregator AgentRunResult contained no 'output' or 'data'."
+            )
         # Always copy assumptions from the plan — not LLM-generated
         output.assumptions_ref = plan.assumptions
         logger.debug(
@@ -146,14 +157,24 @@ def _build_aggregate_user_msg(question: str, rows: list[dict], plan: PlanResult)
     unresolved_terms) — explicitly excluding ``plan.interpretation`` to prevent
     LLM-authored prose from being recycled as fact (prose-handoff anti-pattern).
     """
-    plan_context = json.dumps(
-        plan.model_dump(exclude={"interpretation"}), default=str
+    plan_context = json.dumps(plan.model_dump(exclude={"interpretation"}), default=str)
+    safe = truncate_for_prompt(rows)
+    stats_text = json.dumps(
+        {
+            col: stat.model_dump(exclude_none=True)
+            for col, stat in safe.column_stats.items()
+        },
+        default=str,
     )
-    runtime_data = (
-        f"Plan context (structured):\n{plan_context}\n\n"
-        f"Result rows ({len(rows)} rows):\n{json.dumps(rows[:50], default=str)}"
+    result_text = (
+        f"Result rows (showing {len(safe.rows)} of {safe.total_row_count} total):\n"
+        f"{json.dumps(safe.rows, default=str)}\n\n"
+        f"Per-column stats (full result set):\n{stats_text}"
     )
-    return build_dynamic_state(session_brief="", question=question, runtime_data=runtime_data)
+    runtime_data = f"Plan context (structured):\n{plan_context}\n\n{result_text}"
+    return build_dynamic_state(
+        session_brief="", question=question, runtime_data=runtime_data
+    )
 
 
 def _build_headline(rows: list[dict]) -> Headline:
