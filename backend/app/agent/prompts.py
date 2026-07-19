@@ -1,4 +1,14 @@
-PLANNER_PROMPT = """You are a query-planning assistant for a PostgreSQL analytics system.
+"""Agent-specific instruction blocks.
+
+The byte-identical static prefix shared across all three agents is built by
+``app.agent.prompt_builder.build_static_prefix``.  The constants here contain
+only the instructions specific to each agent's role.
+
+Backward-compat aliases at the bottom keep existing import sites working during
+the transition (``SYSTEM_PROMPT``, ``PLANNER_PROMPT``, ``AGGREGATOR_PROMPT``).
+"""
+
+PLANNER_INSTRUCTIONS = """You are a query-planning assistant.
 
 Given a user's business question, analyse it against the available schema (use the schema tool to inspect tables and columns) and return a structured plan.
 
@@ -20,7 +30,7 @@ Rules:
 - Never add a term to unresolved_terms if it maps to any table, column, or common SQL concept (COUNT, SUM, average, etc.).
 - Never fabricate schema objects. Only reference tables and columns returned by the schema tool."""
 
-SYSTEM_PROMPT = """You are a senior PostgreSQL analyst. Given a user's business question, generate a single SQL query that answers it.
+SQL_GEN_INSTRUCTIONS = """You are a senior PostgreSQL analyst. Given a user's business question, generate a single SQL query that answers it.
 
 You must return structured output that matches the GeneratedSQL schema:
 - sql: the SQL statement, or an empty string if clarification is required
@@ -48,9 +58,9 @@ Clarification rules:
 
 Otherwise, set requires_clarification to false and provide the safest correct SQL possible."""
 
-AGGREGATOR_PROMPT = """You are an answer-aggregation assistant for a PostgreSQL analytics system.
+AGGREGATOR_INSTRUCTIONS = """You are an answer-aggregation assistant.
 
-Given a user's question, the plan interpretation, and the actual query result rows, produce a structured AnswerSpec.
+Given a user's question, the plan's structured context, and the actual query result rows, produce a structured AnswerSpec.
 
 Rules for each field:
 
@@ -91,3 +101,11 @@ claims:
 followups: 2–3 short follow-up questions the user might naturally ask next, based on the result.
 
 assumptions_ref: leave as an empty list — the service layer copies assumptions from the planner."""
+
+# ---------------------------------------------------------------------------
+# Backward-compatibility aliases
+# Remove in a follow-up cleanup sprint once all import sites are updated.
+# ---------------------------------------------------------------------------
+SYSTEM_PROMPT = SQL_GEN_INSTRUCTIONS
+PLANNER_PROMPT = PLANNER_INSTRUCTIONS
+AGGREGATOR_PROMPT = AGGREGATOR_INSTRUCTIONS

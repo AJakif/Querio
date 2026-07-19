@@ -8,7 +8,8 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from app.core.logging import get_logger
-from app.agent.prompts import SYSTEM_PROMPT
+from app.agent.prompt_builder import build_dynamic_state, build_static_prefix
+from app.agent.prompts import SQL_GEN_INSTRUCTIONS
 from app.agent.tools import get_schema
 from app.repositories.base import SchemaRepository
 
@@ -96,9 +97,10 @@ class PydanticAiSqlGenerator(SqlGenerator):
         ollama_num_ctx: int | None = None,
     ):
         logger.info("Initializing Pydantic AI SQL generator", extra={"model_name": model_name})
+        self._system_prompt = build_static_prefix() + "\n\n" + SQL_GEN_INSTRUCTIONS
         self._agent = PydanticAgent(
             _build_model(model_name, openai_api_key, anthropic_api_key, ollama_base_url, ollama_num_ctx),
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=self._system_prompt,
             output_type=GeneratedSQL,
             deps_type=SchemaRepository,
         )
@@ -108,7 +110,10 @@ class PydanticAiSqlGenerator(SqlGenerator):
     async def generate(self, question: str, schema_repo_override: SchemaRepository | None = None) -> GeneratedSQL:
         repo = schema_repo_override or self._schema_repo
         logger.debug("Generating SQL from model", extra={"question_length": len(question)})
-        result = await self._agent.run(question, deps=repo)
+        result = await self._agent.run(
+            build_dynamic_state(session_brief="", question=question),
+            deps=repo,
+        )
         logger.debug(f"Model returned result {result}", extra={"result_type": type(result).__name__})
         generated = _extract_generated_sql(result)
         logger.debug(

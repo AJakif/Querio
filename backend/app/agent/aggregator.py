@@ -14,7 +14,8 @@ from pydantic_ai import Agent as PydanticAgent
 
 from app.agent.agent import _build_model
 from app.agent.contracts import AnswerSpec, Claim, ChartSpecModel, Headline, PlanResult
-from app.agent.prompts import AGGREGATOR_PROMPT
+from app.agent.prompt_builder import build_dynamic_state, build_static_prefix
+from app.agent.prompts import AGGREGATOR_INSTRUCTIONS
 from app.core.logging import get_logger
 
 
@@ -42,9 +43,10 @@ class PydanticAiAggregator(Aggregator):
         ollama_num_ctx: int | None = None,
     ):
         logger.info("Initializing Pydantic AI aggregator", extra={"model_name": model_name})
+        self._system_prompt = build_static_prefix() + "\n\n" + AGGREGATOR_INSTRUCTIONS
         self._agent = PydanticAgent(
             _build_model(model_name, openai_api_key, anthropic_api_key, ollama_base_url, ollama_num_ctx),
-            system_prompt=AGGREGATOR_PROMPT,
+            system_prompt=self._system_prompt,
             output_type=AnswerSpec,
         )
 
@@ -58,11 +60,7 @@ class PydanticAiAggregator(Aggregator):
             "Running aggregator",
             extra={"question_length": len(question), "row_count": len(rows)},
         )
-        user_msg = (
-            f"Question: {question}\n\n"
-            f"Plan interpretation: {plan.interpretation}\n\n"
-            f"Result rows ({len(rows)} rows):\n{json.dumps(rows[:50], default=str)}"
-        )
+        user_msg = _build_aggregate_user_msg(question, rows, plan)
         result = await self._agent.run(user_msg)
         output = getattr(result, "output", None) or getattr(result, "data", None)
         if output is None:
@@ -139,6 +137,23 @@ class FakeAggregator(Aggregator):
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _build_aggregate_user_msg(question: str, rows: list[dict], plan: PlanResult) -> str:
+    """Build the structured user message for an aggregator run.
+
+    Serialises only the plan's structured fields (ambiguity_score, assumptions,
+    unresolved_terms) — explicitly excluding ``plan.interpretation`` to prevent
+    LLM-authored prose from being recycled as fact (prose-handoff anti-pattern).
+    """
+    plan_context = json.dumps(
+        plan.model_dump(exclude={"interpretation"}), default=str
+    )
+    runtime_data = (
+        f"Plan context (structured):\n{plan_context}\n\n"
+        f"Result rows ({len(rows)} rows):\n{json.dumps(rows[:50], default=str)}"
+    )
+    return build_dynamic_state(session_brief="", question=question, runtime_data=runtime_data)
 
 
 def _build_headline(rows: list[dict]) -> Headline:
