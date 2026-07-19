@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     querio_secrets_file: str = str(PROJECT_ROOT / ".env.secrets")
     log_level: str | None = None
     max_result_rows: int = 1000
+    max_llm_rows: int = 50
     query_timeout_ms: int = 15000
     db_schema: str = "marts"
     ambiguity_threshold: float = 0.6
@@ -98,7 +99,10 @@ class Settings(BaseSettings):
     @property
     def effective_log_level(self) -> str:
         if self.log_level and self.log_level.strip():
-            if self.normalized_app_env == "prod" and self.log_level.strip().upper() == "DEBUG":
+            if (
+                self.normalized_app_env == "prod"
+                and self.log_level.strip().upper() == "DEBUG"
+            ):
                 return "INFO"
             return self.log_level.strip().upper()
         if self.normalized_app_env == "prod":
@@ -119,6 +123,7 @@ class Settings(BaseSettings):
 
     def has_env(self, key: str) -> bool:
         from os import environ
+
         return key in environ and environ[key].strip() != ""
 
     @property
@@ -145,12 +150,16 @@ def _apply_secret_overrides(base_settings: Settings) -> Settings:
         updates["database_url"] = database_url
 
     if not base_settings.openai_api_key:
-        openai_api_key = _read_secret_text(base_settings.openai_api_key_file) or secret_env.get("OPENAI_API_KEY")
+        openai_api_key = _read_secret_text(
+            base_settings.openai_api_key_file
+        ) or secret_env.get("OPENAI_API_KEY")
         if openai_api_key:
             updates["openai_api_key"] = SecretStr(openai_api_key)
 
     if not base_settings.anthropic_api_key:
-        anthropic_api_key = _read_secret_text(base_settings.anthropic_api_key_file) or secret_env.get("ANTHROPIC_API_KEY")
+        anthropic_api_key = _read_secret_text(
+            base_settings.anthropic_api_key_file
+        ) or secret_env.get("ANTHROPIC_API_KEY")
         if anthropic_api_key:
             updates["anthropic_api_key"] = SecretStr(anthropic_api_key)
 
