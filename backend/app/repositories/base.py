@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from app.core.logging import get_logger
 
 if TYPE_CHECKING:
-    from app.domain.models import Account, QueryRecord
+    from app.domain.models import Account, ChatSession, QueryRecord, StoredTurn
 
 
 logger = get_logger("repositories.base")
@@ -60,6 +60,34 @@ class QueryRecordRepository(ABC):
     @abstractmethod
     async def list_all(self) -> list[QueryRecord]:
         ...
+
+
+class ChatHistoryRepository(ABC):
+    @abstractmethod
+    async def create_session(
+        self,
+        account_username: str | None,
+        upload_session_id: str | None,
+    ) -> "ChatSession": ...
+
+    @abstractmethod
+    async def get_session(self, session_id: str) -> "ChatSession | None": ...
+
+    @abstractmethod
+    async def append_turn(
+        self,
+        session_id: str,
+        question_text: str,
+        answer_json: dict[str, Any],
+    ) -> "StoredTurn": ...
+
+    @abstractmethod
+    async def list_turns(self, session_id: str) -> "list[StoredTurn]": ...
+
+    @abstractmethod
+    async def list_sessions(
+        self, account_username: str | None
+    ) -> "list[ChatSession]": ...
 
 
 class AccountRepository(ABC):

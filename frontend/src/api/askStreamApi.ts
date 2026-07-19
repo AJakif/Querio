@@ -29,9 +29,10 @@ export async function* streamAskQuestion(
   conversation_id?: string,
   clarification_answer?: string,
   session_id?: string,
+  chat_session_id?: string,
 ): AsyncGenerator<StreamEvent> {
   if (USE_MOCK) {
-    const payload = await askQuestion(question, conversation_id, clarification_answer, session_id)
+    const payload = await askQuestion(question, conversation_id, clarification_answer, session_id, chat_session_id)
     yield { type: 'done', payload }
     return
   }
@@ -40,6 +41,7 @@ export async function* streamAskQuestion(
   if (conversation_id !== undefined) params.set('conversation_id', conversation_id)
   if (clarification_answer !== undefined) params.set('clarification_answer', clarification_answer)
   if (session_id !== undefined) params.set('session_id', session_id)
+  if (chat_session_id !== undefined) params.set('chat_session_id', chat_session_id)
 
   const response = await fetch(`${STREAM_URL}?${params.toString()}`, {
     headers: { Accept: 'text/event-stream' },

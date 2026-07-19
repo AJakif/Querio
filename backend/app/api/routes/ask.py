@@ -27,7 +27,10 @@ from app.schemas.ask import (
     ValidationResultResponse,
 )
 from app.core.config import settings
+from app.api.deps import get_chat_history_service
+from app.domain.exceptions import ChatSessionNotFoundError
 from app.services.ask_service import AskService
+from app.services.chat_history_service import ChatHistoryService
 from app.domain.models import Answer, ClarifyingQuestion, ClarifyResponse, ConfirmFirst
 from app.repositories.base import SchemaRepository
 from app.repositories.combined_schema_repository import CombinedSchemaRepository
@@ -58,6 +61,7 @@ async def get_ask_service() -> AskService:
     return app_state.ask_service
 
 
+
 def _resolve_session(session_id: str | None) -> tuple[str | None, str, SchemaRepository | None]:
     if not session_id:
         return None, "", None
@@ -85,6 +89,7 @@ def _sse_event(event: str, data: dict[str, Any]) -> str:
 async def ask(
     body: AskRequest,
     service: AskService = Depends(get_ask_service),
+    chat_history_service: ChatHistoryService = Depends(get_chat_history_service),
 ) -> AnswerResponse | ClarifyingQuestionResponse | ClarifyResponseResponse | ConfirmFirstResponse:
     request_id = str(uuid.uuid4())
     logger.info(
@@ -99,6 +104,7 @@ async def ask(
     )
     session_schema, context_note, schema_repo_override = _resolve_session(body.session_id)
 
+    timed_out = False
     try:
         result = await asyncio.wait_for(
             service.answer(
@@ -115,8 +121,24 @@ async def ask(
     except (TimeoutError, asyncio.CancelledError):
         logger.warning("Ask request timed out", extra={"request_id": request_id})
         result = Answer(text=_TIMEOUT_MESSAGE, conversation_id=body.conversation_id)
+        timed_out = True
 
-    return _build_response(result, request_id)
+    response = _build_response(result, request_id)
+
+    if body.chat_session_id and isinstance(result, Answer) and not timed_out:
+        try:
+            await chat_history_service.record_turn(
+                body.chat_session_id,
+                body.question,
+                response.model_dump(mode="json"),  # type: ignore[union-attr]
+            )
+        except ChatSessionNotFoundError:
+            logger.warning(
+                "chat_session_id not found, skipping persistence",
+                extra={"chat_session_id": body.chat_session_id},
+            )
+
+    return response
 
 
 @router.post("/ask/confirm")
@@ -157,7 +179,9 @@ async def ask_stream(
     conversation_id: str | None = None,
     clarification_answer: str | None = None,
     session_id: str | None = None,
+    chat_session_id: str | None = None,
     service: AskService = Depends(get_ask_service),
+    chat_history_service: ChatHistoryService = Depends(get_chat_history_service),
 ) -> StreamingResponse:
     """SSE variant of /ask. Emits `event: step` per completed pipeline stage with
     real Planner/Validator/Aggregator data, then a final `event: done` carrying the
@@ -220,8 +244,20 @@ async def ask_stream(
                 yield _sse_event("step", {"stage": stage, "detail": detail})
 
             result = await task
-            payload = _build_response(result, request_id).model_dump(mode="json")
-            yield _sse_event("done", payload)
+            response = _build_response(result, request_id)
+            if chat_session_id and isinstance(result, Answer):
+                try:
+                    await chat_history_service.record_turn(
+                        chat_session_id,
+                        question,
+                        response.model_dump(mode="json"),  # type: ignore[union-attr]
+                    )
+                except ChatSessionNotFoundError:
+                    logger.warning(
+                        "chat_session_id not found, skipping persistence (stream)",
+                        extra={"chat_session_id": chat_session_id},
+                    )
+            yield _sse_event("done", response.model_dump(mode="json"))
         except asyncio.CancelledError:
             raise
         finally:

@@ -30,3 +30,7 @@ class AccountExistsError(Exception):
 
 class InvalidCredentialsError(Exception):
     pass
+
+
+class ChatSessionNotFoundError(Exception):
+    pass

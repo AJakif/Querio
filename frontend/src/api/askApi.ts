@@ -9,6 +9,7 @@ export async function askQuestion(
   conversation_id?: string,
   clarification_answer?: string,
   session_id?: string,
+  chat_session_id?: string,
 ): Promise<AskResponse> {
   if (USE_MOCK) {
     await new Promise((r) => setTimeout(r, 50))
@@ -25,6 +26,9 @@ export async function askQuestion(
   }
   if (session_id !== undefined) {
     body.session_id = session_id
+  }
+  if (chat_session_id !== undefined) {
+    body.chat_session_id = chat_session_id
   }
 
   const response = await fetch(BASE_URL, {

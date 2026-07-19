@@ -5,6 +5,7 @@ from fastapi import Depends, Header, HTTPException
 
 from app.domain.models import Account
 from app.services.account_service import AccountService
+from app.services.chat_history_service import ChatHistoryService
 
 
 def get_account_service() -> AccountService:
@@ -13,6 +14,14 @@ def get_account_service() -> AccountService:
     if app_state is None:
         raise HTTPException(status_code=503, detail="Application not ready")
     return app_state.account_service
+
+
+def get_chat_history_service() -> ChatHistoryService:
+    from app.main import app_state
+
+    if app_state is None:
+        raise HTTPException(status_code=503, detail="Application not ready")
+    return app_state.chat_history_service
 
 
 async def get_current_account(

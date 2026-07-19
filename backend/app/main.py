@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from contextlib import asynccontextmanager
 from os import environ
@@ -13,6 +14,7 @@ from app.api.routes.schema import router as schema_router
 from app.api.routes.verification import router as verification_router
 from app.api.routes.accounts import router as accounts_router
 from app.services.ask_service import AskService
+from app.services.chat_history_service import ChatHistoryService
 from app.services.session_manager import SessionManager
 from app.services.verification_service import VerificationService
 from app.services.account_service import AccountService
@@ -21,8 +23,10 @@ from app.repositories.memory.schema_repository_memory import InMemorySchemaRepos
 from app.repositories.memory.query_repository_memory import InMemoryQueryRepository
 from app.repositories.memory.query_record_repository_memory import InMemoryQueryRecordRepository
 from app.repositories.memory.account_repository_memory import InMemoryAccountRepository
+from app.repositories.memory.chat_history_repository_memory import InMemoryChatHistoryRepository
 from app.repositories.postgres.schema_repository_pg import PostgresSchemaRepository
 from app.repositories.postgres.query_repository_pg import PostgresQueryRepository
+from app.repositories.postgres.chat_history_repository_pg import PostgresChatHistoryRepository
 from app.agent.agent import SqlGenerator, PydanticAiSqlGenerator, FakeSqlGenerator
 from app.agent.aggregator import Aggregator, PydanticAiAggregator, FakeAggregator
 from app.agent.planner import Planner, PydanticAiPlanner, FakePlanner
@@ -37,6 +41,7 @@ class AppState:
     query_repository: QueryRepository
     verification_service: VerificationService
     account_service: AccountService
+    chat_history_service: ChatHistoryService
 
 
 app_state: AppState | None = None
@@ -53,6 +58,19 @@ def _build_repos() -> tuple[SchemaRepository, QueryRepository]:
         return PostgresSchemaRepository(schema=settings.db_schema), PostgresQueryRepository()
     logger.warning("DATABASE_URL not set, using in-memory repositories")
     return InMemorySchemaRepository(), InMemoryQueryRepository()
+
+
+async def _build_chat_history_service() -> ChatHistoryService:
+    if _has_env("DATABASE_URL"):
+        from scripts.run_migrations import run_migrations
+        try:
+            await asyncio.to_thread(run_migrations)
+        except Exception as exc:
+            raise RuntimeError(f"Failed to apply chat history migrations: {exc}") from exc
+        logger.info("Using Postgres chat history repository")
+        return ChatHistoryService(repo=PostgresChatHistoryRepository())
+    logger.warning("DATABASE_URL not set, using in-memory chat history repository")
+    return ChatHistoryService(repo=InMemoryChatHistoryRepository())
 
 
 def _build_sql_generator(schema_repo: SchemaRepository) -> SqlGenerator:
@@ -168,6 +186,7 @@ async def lifespan(app: FastAPI):
     query_record_repo = InMemoryQueryRecordRepository()
     account_repo = InMemoryAccountRepository()
     verification_service = VerificationService(repo=query_record_repo)
+    chat_history_service = await _build_chat_history_service()
     app_state = AppState(
         ask_service=AskService(
             sql_generator=sql_generator,
@@ -183,6 +202,7 @@ async def lifespan(app: FastAPI):
         query_repository=query_repo,
         verification_service=verification_service,
         account_service=AccountService(repo=account_repo),
+        chat_history_service=chat_history_service,
     )
     yield
     logger.info("Shutting down Querio API")
