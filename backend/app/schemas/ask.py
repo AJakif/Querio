@@ -80,7 +80,7 @@ class ClaimResponse(BaseModel):
 
 
 class AnswerSpecResponse(BaseModel):
-    response_type: Literal['stat', 'chart'] = 'stat'
+    response_type: Literal["stat", "chart"] = "stat"
     headline: HeadlineResponse
     restatement: str
     chart_spec: ChartSpecResponse | None = None
@@ -89,6 +89,7 @@ class AnswerSpecResponse(BaseModel):
     followups: list[str] = []
     assumptions_ref: list[AssumptionResponse] = []
     dropped_claim_count: int = 0
+    session_brief: str = ""
 
 
 class AnswerResponse(BaseModel):
@@ -144,3 +145,4 @@ class AssumptionAmendment(BaseModel):
 class ConfirmRequest(BaseModel):
     conversation_id: str
     amendments: list[AssumptionAmendment] = []
+    chat_session_id: str | None = None

@@ -1,13 +1,14 @@
 """Load-bearing tests for Slice 3: Aggregator → AnswerSpec contract.
 
-Test budget: 6 (5 original + 1 regression Bug-8; JUSTIFIED: +1 — proves the
-response_type/chart_spec invariant that the old FakeAggregator silently violated,
-which broke ROUTE-1/ROUTE-2 dispatch in every test using the fake aggregator).
+Test budget: 7 (6 prior + 1 T9b truncation backstop; JUSTIFIED: +1 — the truncation
+backstop is the core guarantee of T9b acceptance criterion 1; if it regresses, briefs
+grow unboundedly across turns and the acceptance test would fail silently).
 """
 import pytest
 
 from app.agent.aggregator import FakeAggregator
 from app.agent.contracts import Assumption, AnswerSpec, PlanResult
+from app.agent.prompt_gate import truncate_brief
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +140,29 @@ class TestFakeAggregatorResponseTypeConsistency:
         assert spec.response_type == "chart", (
             f"response_type should be 'chart' when chart_spec is non-null, got {spec.response_type!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# 7. T9b: session_brief truncation backstop
+# ---------------------------------------------------------------------------
+
+class TestSessionBriefTruncation:
+    def test_oversized_brief_is_truncated_to_fit_max_tokens(self) -> None:
+        """truncate_brief must cap the brief to max_tokens * 4 chars.
+
+        This is the hard backstop behind T9b acceptance criterion 1: the brief
+        must never grow unbounded regardless of what the model emits.
+        """
+        max_tokens = 10  # tiny budget for test
+        # 200 chars >> 10 tokens * 4 chars/token = 40 chars
+        oversized = "A" * 200
+
+        result = truncate_brief(oversized, max_tokens)
+
+        # Must fit within the char budget
+        assert len(result) <= max_tokens * 4
+        # Must not be empty (content is present up to the budget)
+        assert len(result) > 0
 
 
 class TestAnswerSpecInApiResponse:

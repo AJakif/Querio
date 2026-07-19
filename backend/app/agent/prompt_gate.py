@@ -105,6 +105,27 @@ def _compute_column_stats(rows: list[dict[str, Any]]) -> dict[str, ColumnStat]:
 # ---------------------------------------------------------------------------
 
 
+_CHARS_PER_TOKEN = 4  # rough heuristic; no tiktoken dependency
+
+
+def truncate_brief(brief: str, max_tokens: int) -> str:
+    """Hard backstop: trim *brief* to fit *max_tokens* (heuristic: 4 chars/token).
+
+    Called after every Aggregator LLM call so the brief can never grow unbounded
+    regardless of what the model emits.  This is the guarantee behind T9b
+    acceptance criterion 1 — no extra LLM round trip, purely deterministic.
+    """
+    max_chars = max_tokens * _CHARS_PER_TOKEN
+    if len(brief) <= max_chars:
+        return brief
+    # Trim to the last word boundary inside the budget so we don't cut mid-word.
+    truncated = brief[:max_chars]
+    last_space = truncated.rfind(" ")
+    if last_space > max_chars // 2:
+        truncated = truncated[:last_space]
+    return truncated
+
+
 def truncate_for_prompt(rows: list[dict[str, Any]]) -> PromptSafeResult:
     """Cap rows and compute per-column stats for LLM prompt injection.
 

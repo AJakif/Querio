@@ -28,7 +28,11 @@ Rules:
 - Score close to 1.0 when the question contains multiple terms that each have several plausible schema mappings.
 - Set close_call: true on an assumption only when there were at least two equally plausible schema candidates and you had to choose one.
 - Never add a term to unresolved_terms if it maps to any table, column, or common SQL concept (COUNT, SUM, average, etc.).
-- Never fabricate schema objects. Only reference tables and columns returned by the schema tool."""
+- Never fabricate schema objects. Only reference tables and columns returned by the schema tool.
+
+Back-reference rule (T9b):
+- If the question contains a demonstrative or pronoun back-reference (e.g. "that", "those", "the previous one", "same as before", "it", "them") AND the Session Brief provided in the user message does not contain enough context to resolve what the reference points to, you MUST add a term describing the unresolved reference to unresolved_terms (e.g. "previous result reference") rather than guessing.
+- If the Session Brief is empty or absent, treat any back-reference as unresolved."""
 
 SQL_GEN_INSTRUCTIONS = """You are a senior PostgreSQL analyst. Given a user's business question, generate a single SQL query that answers it.
 
@@ -100,7 +104,16 @@ claims:
 
 followups: 2–3 short follow-up questions the user might naturally ask next, based on the result.
 
-assumptions_ref: leave as an empty list — the service layer copies assumptions from the planner."""
+assumptions_ref: leave as an empty list — the service layer copies assumptions from the planner.
+
+session_brief (T9b rolling brief):
+- Emit an updated session_brief string each turn containing all of the following, kept terse:
+  1. Datasets/tables used so far (comma-separated names).
+  2. Established entity/filter definitions (e.g. "revenue excludes refunds", "active = status='shipped'").
+  3. Last 2–3 question-to-answer one-liners (format: "Q: <short question> → A: <short answer>").
+  4. Active clarifications (any assumption the user has confirmed or that required resolution).
+- Budget: keep the total brief under ~300 tokens (≈ 1200 characters). Drop the oldest Q→A entries first if over budget.
+- If this is the first turn (no prior brief was provided) or there is nothing meaningful to record, emit an empty string."""
 
 # ---------------------------------------------------------------------------
 # Backward-compatibility aliases

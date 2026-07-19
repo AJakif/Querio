@@ -20,8 +20,8 @@ class Planner(ABC):
         self,
         question: str,
         schema_repo_override: SchemaRepository | None = None,
-    ) -> PlanResult:
-        ...
+        session_brief: str = "",
+    ) -> PlanResult: ...
 
 
 class PydanticAiPlanner(Planner):
@@ -34,10 +34,18 @@ class PydanticAiPlanner(Planner):
         ollama_base_url: str | None = None,
         ollama_num_ctx: int | None = None,
     ):
-        logger.info("Initializing Pydantic AI planner", extra={"model_name": model_name})
+        logger.info(
+            "Initializing Pydantic AI planner", extra={"model_name": model_name}
+        )
         self._system_prompt = build_static_prefix() + "\n\n" + PLANNER_INSTRUCTIONS
         self._agent = PydanticAgent(
-            _build_model(model_name, openai_api_key, anthropic_api_key, ollama_base_url, ollama_num_ctx),
+            _build_model(
+                model_name,
+                openai_api_key,
+                anthropic_api_key,
+                ollama_base_url,
+                ollama_num_ctx,
+            ),
             system_prompt=self._system_prompt,
             output_type=PlanResult,
             deps_type=SchemaRepository,
@@ -49,16 +57,19 @@ class PydanticAiPlanner(Planner):
         self,
         question: str,
         schema_repo_override: SchemaRepository | None = None,
+        session_brief: str = "",
     ) -> PlanResult:
         repo = schema_repo_override or self._schema_repo
         logger.debug("Running planner", extra={"question_length": len(question)})
         result = await self._agent.run(
-            build_dynamic_state(session_brief="", question=question),
+            build_dynamic_state(session_brief=session_brief, question=question),
             deps=repo,
         )
         output = getattr(result, "output", None) or getattr(result, "data", None)
         if output is None:
-            raise AttributeError("Planner AgentRunResult contained no 'output' or 'data'.")
+            raise AttributeError(
+                "Planner AgentRunResult contained no 'output' or 'data'."
+            )
         logger.debug(
             "Planner result",
             extra={
@@ -77,6 +88,7 @@ class FakePlanner(Planner):
         self,
         question: str,
         schema_repo_override: SchemaRepository | None = None,
+        session_brief: str = "",
     ) -> PlanResult:
         logger.debug("Using fake planner", extra={"question_length": len(question)})
         return PlanResult(

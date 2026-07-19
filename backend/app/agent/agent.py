@@ -26,8 +26,12 @@ class GeneratedSQL(BaseModel):
 
 class SqlGenerator(ABC):
     @abstractmethod
-    async def generate(self, question: str, schema_repo_override: SchemaRepository | None = None) -> GeneratedSQL:
-        ...
+    async def generate(
+        self,
+        question: str,
+        schema_repo_override: SchemaRepository | None = None,
+        session_brief: str = "",
+    ) -> GeneratedSQL: ...
 
 
 def _extract_generated_sql(result) -> GeneratedSQL:
@@ -35,7 +39,9 @@ def _extract_generated_sql(result) -> GeneratedSQL:
     if output is None:
         output = getattr(result, "data", None)
     if output is None:
-        raise AttributeError("AgentRunResult did not contain an 'output' or legacy 'data' attribute.")
+        raise AttributeError(
+            "AgentRunResult did not contain an 'output' or legacy 'data' attribute."
+        )
     return output
 
 
@@ -49,11 +55,16 @@ def _build_model(
     logger.debug("Building model adapter", extra={"model_name": model_name})
     provider_name, separator, provider_model = model_name.partition(":")
     if not separator:
-        logger.debug("Using raw model name without provider adapter", extra={"model_name": model_name})
+        logger.debug(
+            "Using raw model name without provider adapter",
+            extra={"model_name": model_name},
+        )
         return model_name
 
     if provider_name == "openai" and openai_api_key:
-        logger.debug("Building OpenAI model adapter", extra={"model_name": provider_model})
+        logger.debug(
+            "Building OpenAI model adapter", extra={"model_name": provider_model}
+        )
         return OpenAIChatModel(
             provider_model,
             provider=OpenAIProvider(api_key=openai_api_key),
@@ -73,7 +84,9 @@ def _build_model(
         )
 
     if provider_name == "anthropic" and anthropic_api_key:
-        logger.debug("Building Anthropic model adapter", extra={"model_name": provider_model})
+        logger.debug(
+            "Building Anthropic model adapter", extra={"model_name": provider_model}
+        )
         return AnthropicModel(
             provider_model,
             provider=AnthropicProvider(api_key=anthropic_api_key),
@@ -96,10 +109,18 @@ class PydanticAiSqlGenerator(SqlGenerator):
         ollama_base_url: str | None = None,
         ollama_num_ctx: int | None = None,
     ):
-        logger.info("Initializing Pydantic AI SQL generator", extra={"model_name": model_name})
+        logger.info(
+            "Initializing Pydantic AI SQL generator", extra={"model_name": model_name}
+        )
         self._system_prompt = build_static_prefix() + "\n\n" + SQL_GEN_INSTRUCTIONS
         self._agent = PydanticAgent(
-            _build_model(model_name, openai_api_key, anthropic_api_key, ollama_base_url, ollama_num_ctx),
+            _build_model(
+                model_name,
+                openai_api_key,
+                anthropic_api_key,
+                ollama_base_url,
+                ollama_num_ctx,
+            ),
             system_prompt=self._system_prompt,
             output_type=GeneratedSQL,
             deps_type=SchemaRepository,
@@ -107,14 +128,24 @@ class PydanticAiSqlGenerator(SqlGenerator):
         self._agent.tool(get_schema)
         self._schema_repo = schema_repo
 
-    async def generate(self, question: str, schema_repo_override: SchemaRepository | None = None) -> GeneratedSQL:
+    async def generate(
+        self,
+        question: str,
+        schema_repo_override: SchemaRepository | None = None,
+        session_brief: str = "",
+    ) -> GeneratedSQL:
         repo = schema_repo_override or self._schema_repo
-        logger.debug("Generating SQL from model", extra={"question_length": len(question)})
+        logger.debug(
+            "Generating SQL from model", extra={"question_length": len(question)}
+        )
         result = await self._agent.run(
-            build_dynamic_state(session_brief="", question=question),
+            build_dynamic_state(session_brief=session_brief, question=question),
             deps=repo,
         )
-        logger.debug(f"Model returned result {result}", extra={"result_type": type(result).__name__})
+        logger.debug(
+            f"Model returned result {result}",
+            extra={"result_type": type(result).__name__},
+        )
         generated = _extract_generated_sql(result)
         logger.debug(
             "Model returned SQL result",
@@ -127,8 +158,15 @@ class PydanticAiSqlGenerator(SqlGenerator):
 
 
 class FakeSqlGenerator(SqlGenerator):
-    async def generate(self, question: str, schema_repo_override: SchemaRepository | None = None) -> GeneratedSQL:
-        logger.debug("Using fake SQL generator", extra={"question_length": len(question)})
+    async def generate(
+        self,
+        question: str,
+        schema_repo_override: SchemaRepository | None = None,
+        session_brief: str = "",
+    ) -> GeneratedSQL:
+        logger.debug(
+            "Using fake SQL generator", extra={"question_length": len(question)}
+        )
         return GeneratedSQL(
             sql="SELECT COUNT(*) AS order_count FROM marts.fct_orders",
             explanation="Counting all orders in the marts fact table.",

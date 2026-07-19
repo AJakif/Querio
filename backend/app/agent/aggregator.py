@@ -16,7 +16,7 @@ from pydantic_ai import Agent as PydanticAgent
 from app.agent.agent import _build_model
 from app.agent.contracts import AnswerSpec, Claim, ChartSpecModel, Headline, PlanResult
 from app.agent.prompt_builder import build_dynamic_state, build_static_prefix
-from app.agent.prompt_gate import truncate_for_prompt
+from app.agent.prompt_gate import truncate_brief, truncate_for_prompt
 from app.agent.prompts import AGGREGATOR_INSTRUCTIONS
 from app.core.logging import get_logger
 
@@ -31,6 +31,7 @@ class Aggregator(ABC):
         question: str,
         rows: list[dict],
         plan: PlanResult,
+        prior_brief: str = "",
     ) -> AnswerSpec: ...
 
 
@@ -64,12 +65,17 @@ class PydanticAiAggregator(Aggregator):
         question: str,
         rows: list[dict],
         plan: PlanResult,
+        prior_brief: str = "",
     ) -> AnswerSpec:
+        from app.core.config import settings
+
         logger.debug(
             "Running aggregator",
             extra={"question_length": len(question), "row_count": len(rows)},
         )
-        user_msg = _build_aggregate_user_msg(question, rows, plan)
+        user_msg = _build_aggregate_user_msg(
+            question, rows, plan, prior_brief=prior_brief
+        )
         result = await self._agent.run(user_msg)
         output = getattr(result, "output", None) or getattr(result, "data", None)
         if output is None:
@@ -78,11 +84,17 @@ class PydanticAiAggregator(Aggregator):
             )
         # Always copy assumptions from the plan — not LLM-generated
         output.assumptions_ref = plan.assumptions
+        # Hard backstop: truncate brief regardless of what the model emitted.
+        # This is the actual guarantee behind T9b acceptance criterion 1.
+        output.session_brief = truncate_brief(
+            output.session_brief, settings.session_brief_max_tokens
+        )
         logger.debug(
             "Aggregator result",
             extra={
                 "claim_count": len(output.claims),
                 "has_chart": output.chart_spec is not None,
+                "session_brief_len": len(output.session_brief),
             },
         )
         return output
@@ -96,6 +108,7 @@ class FakeAggregator(Aggregator):
         question: str,
         rows: list[dict],
         plan: PlanResult,
+        prior_brief: str = "",
     ) -> AnswerSpec:
         logger.debug(
             "Using fake aggregator",
@@ -150,7 +163,9 @@ class FakeAggregator(Aggregator):
 # ---------------------------------------------------------------------------
 
 
-def _build_aggregate_user_msg(question: str, rows: list[dict], plan: PlanResult) -> str:
+def _build_aggregate_user_msg(
+    question: str, rows: list[dict], plan: PlanResult, prior_brief: str = ""
+) -> str:
     """Build the structured user message for an aggregator run.
 
     Serialises only the plan's structured fields (ambiguity_score, assumptions,
@@ -173,7 +188,7 @@ def _build_aggregate_user_msg(question: str, rows: list[dict], plan: PlanResult)
     )
     runtime_data = f"Plan context (structured):\n{plan_context}\n\n{result_text}"
     return build_dynamic_state(
-        session_brief="", question=question, runtime_data=runtime_data
+        session_brief=prior_brief, question=question, runtime_data=runtime_data
     )
 
 
