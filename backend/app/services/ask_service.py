@@ -273,7 +273,7 @@ class AskService:
 
         # Guardrail: stored SQL must still pass validation before execution.
         # Drift or tampering could leave a formerly-valid query in a now-invalid state.
-        _safe_sql, _sql_error = validate_sql(record.sql, max_rows=settings.max_rows)
+        _safe_sql, _sql_error = validate_sql(record.sql, max_rows=settings.max_result_rows)
         if _sql_error:
             logger.warning(
                 "Verified cache SQL failed guardrail; falling through to full pipeline",
@@ -322,7 +322,7 @@ class AskService:
     ) -> Answer | ClarifyingQuestion | ConfirmFirst:
         effective_query_repo = query_repo or self._query_repo
         effective_schema_repo = schema_repo or self._schema_repo
-        safe_sql, error = validate_sql(generated.sql, max_rows=settings.max_rows)
+        safe_sql, error = validate_sql(generated.sql, max_rows=settings.max_result_rows)
         if error:
             logger.warning(
                 "SQL blocked by guardrail",
