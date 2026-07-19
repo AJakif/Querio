@@ -4,7 +4,8 @@ from pydantic_ai import Agent as PydanticAgent
 
 from app.agent.agent import _build_model
 from app.agent.contracts import PlanResult
-from app.agent.prompts import PLANNER_PROMPT
+from app.agent.prompt_builder import build_dynamic_state, build_static_prefix
+from app.agent.prompts import PLANNER_INSTRUCTIONS
 from app.agent.tools import get_schema
 from app.core.logging import get_logger
 from app.repositories.base import SchemaRepository
@@ -34,9 +35,10 @@ class PydanticAiPlanner(Planner):
         ollama_num_ctx: int | None = None,
     ):
         logger.info("Initializing Pydantic AI planner", extra={"model_name": model_name})
+        self._system_prompt = build_static_prefix() + "\n\n" + PLANNER_INSTRUCTIONS
         self._agent = PydanticAgent(
             _build_model(model_name, openai_api_key, anthropic_api_key, ollama_base_url, ollama_num_ctx),
-            system_prompt=PLANNER_PROMPT,
+            system_prompt=self._system_prompt,
             output_type=PlanResult,
             deps_type=SchemaRepository,
         )
@@ -50,7 +52,10 @@ class PydanticAiPlanner(Planner):
     ) -> PlanResult:
         repo = schema_repo_override or self._schema_repo
         logger.debug("Running planner", extra={"question_length": len(question)})
-        result = await self._agent.run(question, deps=repo)
+        result = await self._agent.run(
+            build_dynamic_state(session_brief="", question=question),
+            deps=repo,
+        )
         output = getattr(result, "output", None) or getattr(result, "data", None)
         if output is None:
             raise AttributeError("Planner AgentRunResult contained no 'output' or 'data'.")
