@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,12 +29,10 @@ class DataRefreshPipeline:
     def __init__(
         self,
         command_runner=None,
-        python_executable: str | None = None,
         dbt_executable: str = "dbt",
         repo_root: Path | None = None,
     ) -> None:
         self._command_runner = command_runner or self._run_command
-        self._python_executable = python_executable or sys.executable
         self._dbt_executable = dbt_executable
         self._repo_root = repo_root or Path(__file__).resolve().parents[3]
 
@@ -57,11 +54,6 @@ class DataRefreshPipeline:
 
     def _build_steps(self) -> list[RefreshStep]:
         return [
-            RefreshStep(
-                name="append_synthetic_orders",
-                command=(self._python_executable, "scripts/append_synthetic_orders.py"),
-                cwd=self._repo_root / "backend",
-            ),
             RefreshStep(
                 name="dbt_run",
                 command=(self._dbt_executable, "run"),

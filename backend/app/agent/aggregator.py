@@ -39,10 +39,11 @@ class PydanticAiAggregator(Aggregator):
         openai_api_key: str | None = None,
         anthropic_api_key: str | None = None,
         ollama_base_url: str | None = None,
+        ollama_num_ctx: int | None = None,
     ):
         logger.info("Initializing Pydantic AI aggregator", extra={"model_name": model_name})
         self._agent = PydanticAgent(
-            _build_model(model_name, openai_api_key, anthropic_api_key, ollama_base_url),
+            _build_model(model_name, openai_api_key, anthropic_api_key, ollama_base_url, ollama_num_ctx),
             system_prompt=AGGREGATOR_PROMPT,
             output_type=AnswerSpec,
         )
@@ -123,6 +124,7 @@ class FakeAggregator(Aggregator):
             )
 
         return AnswerSpec(
+            response_type="chart" if chart_spec is not None else "stat",
             headline=headline,
             restatement=f"Computed {question}.",
             chart_spec=chart_spec,

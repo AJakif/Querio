@@ -71,6 +71,9 @@ class Answer:
     validation: ValidationResult | None = None
     answer_spec: AnswerSpec | None = None
     result_rows: list[dict[str, Any]] | None = None
+    verifier_name: str | None = None
+    badge_state: str | None = None
+    query_id: str | None = None
 
 
 @dataclass

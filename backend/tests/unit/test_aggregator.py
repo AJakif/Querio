@@ -1,6 +1,8 @@
 """Load-bearing tests for Slice 3: Aggregator → AnswerSpec contract.
 
-Test budget: 5 (soft ceiling 5). No JUSTIFIED needed.
+Test budget: 6 (5 original + 1 regression Bug-8; JUSTIFIED: +1 — proves the
+response_type/chart_spec invariant that the old FakeAggregator silently violated,
+which broke ROUTE-1/ROUTE-2 dispatch in every test using the fake aggregator).
 """
 import pytest
 
@@ -110,6 +112,34 @@ class TestAssumptionsRef:
 # ---------------------------------------------------------------------------
 # 5. API integration: answer_spec flows through /ask response
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# 6. REGRESSION Bug-8 — FakeAggregator response_type must be consistent with chart_spec
+# ---------------------------------------------------------------------------
+
+
+class TestFakeAggregatorResponseTypeConsistency:
+    @pytest.mark.asyncio
+    async def test_fake_aggregator_response_type_matches_chart_spec_presence(self) -> None:
+        """Regression: FakeAggregator used to default response_type to 'stat' even when
+        chart_spec was non-null, violating the invariant response_type=='chart' ⟺
+        chart_spec is not None. A multi-row result must produce response_type='chart'."""
+        agg = FakeAggregator()
+        rows = [
+            {"region": "SP", "revenue": 4200000},
+            {"region": "RJ", "revenue": 1350000},
+        ]
+        plan = PlanResult()
+
+        spec = await agg.aggregate("revenue by region", rows, plan)
+
+        # chart_spec must be present for a multi-row, multi-column result
+        assert spec.chart_spec is not None
+        # response_type must agree with chart_spec presence (the bug: it was always 'stat')
+        assert spec.response_type == "chart", (
+            f"response_type should be 'chart' when chart_spec is non-null, got {spec.response_type!r}"
+        )
+
 
 class TestAnswerSpecInApiResponse:
     def test_answer_spec_present_in_ask_response(self) -> None:

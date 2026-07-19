@@ -87,7 +87,9 @@ services:
       MODEL_PROVIDER: ${MODEL_PROVIDER:-openai}
       MODEL_NAME: ${MODEL_NAME:-openai:gpt-4o-mini}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+      # The backend runs in a container, so localhost would point at the
+      # backend container rather than the Ollama daemon on the host.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL_DOCKER:-http://host.docker.internal:11434/v1}
       QUERIO_SECRETS_FILE: /run/secrets/querio.env
     volumes:
       - ./.env.secrets:/run/secrets/querio.env:ro

@@ -26,11 +26,16 @@ class Validator:
     def verify_claims(
         self,
         spec: AnswerSpec,
-        rows: list[dict],  # noqa: ARG002 — accepted for interface symmetry; operands are pre-extracted
+        rows: list[dict],
     ) -> tuple[AnswerSpec, int]:
-        """Re-execute every computation-typed claim and drop any that fail arithmetic.
+        """Re-execute every claim and drop any that cannot be verified against real rows.
 
-        - ``row``-typed claims are passed through unconditionally.
+        - ``row``-typed claims: each cited cell must match rows[row][column]; drop on any mismatch.
+        - ``computation``-typed claims: operands are derived from cited cells resolved against real
+          rows (never trusted from the LLM-supplied ``operands`` field); recomputed value must match
+          ``claim.value`` within tolerance; drop if cells fail to resolve or arithmetic mismatches.
+        - If ``claim.cells`` is empty for a computation claim, falls back to ``claim.operands``
+          (legacy path for claims without cell citations).
         - ``restatement`` and ``headline`` are never touched.
         - Unrecognized operations are dropped (zero verification = not trusted).
         - Returns (updated_spec, dropped_count) where dropped_count is the count dropped in THIS call.
@@ -39,16 +44,47 @@ class Validator:
         dropped = 0
 
         for claim in spec.claims:
+            if claim.type == "row":
+                # Row-cite verification: every cited cell must match the real result set.
+                if claim.cells and not _verify_row_cells(claim.cells, rows):
+                    logger.info(
+                        "Dropping row claim — cited cell value doesn't match result rows",
+                        extra={"sentence": claim.sentence},
+                    )
+                    dropped += 1
+                    continue
+                kept.append(claim)
+                continue
+
             if claim.type != "computation":
                 kept.append(claim)
                 continue
 
             # Missing required fields → can't verify; preserve the claim
-            if claim.value is None or claim.operands is None or claim.operation is None:
+            if claim.value is None or claim.operation is None:
                 kept.append(claim)
                 continue
 
-            recomputed = _recompute(claim.operation, claim.operands)
+            # Derive operands from cited cells against real rows (never trust LLM operands).
+            if claim.cells:
+                derived = _resolve_cells_to_values(claim.cells, rows)
+                if derived is None:
+                    logger.info(
+                        "Dropping computation claim — cells failed to resolve against result rows",
+                        extra={"sentence": claim.sentence},
+                    )
+                    dropped += 1
+                    continue
+                operands = derived
+            elif claim.operands is not None:
+                # No cells — fall back to LLM-supplied operands (legacy path)
+                operands = claim.operands
+            else:
+                # No cells and no operands — can't verify; preserve
+                kept.append(claim)
+                continue
+
+            recomputed = _recompute(claim.operation, operands)
             if recomputed is None:
                 # Unrecognized operation — zero verification means not trusted; drop it
                 logger.debug(
@@ -139,6 +175,60 @@ class Validator:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _resolve_cells_to_values(cells: list[dict], rows: list[dict]) -> list[float] | None:
+    """Resolve each cited cell to its actual numeric value from the real result set.
+
+    Returns a list of floats in cell order, or None if any cell cannot be resolved
+    (out-of-bounds row index, missing column, or non-numeric value).
+    """
+    values: list[float] = []
+    for cell in cells:
+        row_idx = cell.get("row")
+        col = cell.get("column")
+        if row_idx is None or col is None:
+            return None
+        if not isinstance(row_idx, int) or row_idx < 0 or row_idx >= len(rows):
+            return None
+        row = rows[row_idx]
+        if col not in row:
+            return None
+        try:
+            values.append(float(row[col]))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+    return values
+
+
+def _verify_row_cells(cells: list[dict], rows: list[dict]) -> bool:
+    """Return True only if every cited cell matches rows[row][column] within tolerance.
+
+    Numeric values are compared with a relative tolerance; strings are compared exactly.
+    Returns False if any cell is out of bounds, the column is missing, or the value differs.
+    """
+    for cell in cells:
+        row_idx = cell.get("row")
+        col = cell.get("column")
+        expected = cell.get("value")
+        if row_idx is None or col is None:
+            return False
+        if not isinstance(row_idx, int) or row_idx < 0 or row_idx >= len(rows):
+            return False
+        row = rows[row_idx]
+        if col not in row:
+            return False
+        actual = row[col]
+        try:
+            f_actual = float(actual)  # type: ignore[arg-type]
+            f_expected = float(expected)  # type: ignore[arg-type]
+            tol = 1e-6 * max(1.0, abs(f_expected))
+            if abs(f_actual - f_expected) >= tol:
+                return False
+        except (TypeError, ValueError):
+            if str(actual) != str(expected):
+                return False
+    return True
 
 
 def _recompute(operation: str, operands: list[float]) -> float | None:

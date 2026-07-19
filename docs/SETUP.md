@@ -50,7 +50,7 @@ Linux/macOS:
 `docker compose up` runs the full pipeline automatically:
 
 1. **Postgres** starts and waits for health.
-2. **Seed** (`python scripts/load_raw.py`) creates the `raw` schema and populates 9 tables with deterministic Olist-like data.
+2. **Seed** (`python scripts/load_raw.py`) creates the empty `raw` schema (9 tables, matching the Olist Brazilian E-Commerce structure) with no data.
 3. **dbt** runs `dbt run`, which transforms `raw` → `marts` schema producing two analytical models:
    - `fct_orders` — order-level fact table (orders + items + payments)
    - `dim_customers` — customer dimension with aggregated order metrics
@@ -76,6 +76,11 @@ OLLAMA_BASE_URL=http://localhost:11434/v1
 LOG_LEVEL=
 QUERIO_SECRETS_FILE=.env.secrets
 ```
+
+The `seed` service only creates the empty `raw` schema (so dbt has tables to
+build `marts` from) — it does not load any demo data. Load your own data via
+the in-chat upload flow, or `INSERT` into the `raw` tables directly if you
+want a persistent default dataset instead of a per-session upload.
 
 ```bash
 # .env.secrets
@@ -105,21 +110,23 @@ If hosted provider API keys are blank, Querio falls back to its built-in fake SQ
 
 Querio's agent pipeline chains several structured-output calls per question (ambiguity scoring, SQL generation, cost/fingerprint validation, AnswerSpec assembly with typed chart specs and citations), so the local model needs reliable function-calling / structured-output support, not just general chat quality — this is where small local models tend to fall apart first.
 
-**Recommended model: `qwen2.5:7b`.** It has meaningfully better structured-output/tool-calling reliability than the repo's current default (`llama3.1:8b`) at a comparable footprint (~4.7GB Q4). Avoid going smaller (`llama3.2:3b`, `phi3-mini`, etc.) — sub-7B models tend to silently drift on JSON shape across a multi-step tool-call chain rather than fail obviously.
+**Minimum recommendation: `gemma4:e4b`.** In practice this is the smallest model that reliably completes the full pipeline (Planner → SQL Generator → Validator → Aggregator) with a proper structured AnswerSpec — badge, headline, restatement, chart/claims when applicable — instead of silently degrading to a plain-text fallback answer. It's a larger download (~9.6GB) and noticeably slower per call than `qwen2.5:7b` on CPU, so expect chart-eligible answers (which require a more complex Aggregator response) to take several minutes on modest hardware; budget your timeouts accordingly.
+
+`qwen2.5:7b` (~4.7GB Q4) is a faster, lighter fallback with meaningfully better structured-output/tool-calling reliability than the repo's original default (`llama3.1:8b`), but it degrades to the plain-text fallback answer noticeably more often than `gemma4:e4b` on the Aggregator's structured-output step — expect fewer full AnswerCards. Avoid going smaller still (`llama3.2:3b`, `phi3-mini`, etc.) — sub-7B models tend to silently drift on JSON shape across a multi-step tool-call chain rather than fail obviously.
 
 ```bash
-ollama pull qwen2.5:7b
+ollama pull gemma4:e4b
 ```
 
 Then set in `.env` (or `.env.secrets` is not needed here — Ollama requires no API key):
 
 ```bash
 MODEL_PROVIDER=ollama
-OLLAMA_MODEL=qwen2.5:7b
+OLLAMA_MODEL=gemma4:e4b
 OLLAMA_BASE_URL=http://localhost:11434/v1
 ```
 
-`scripts/setup.sh` / `scripts/setup.ps1` auto-detect a running Ollama daemon and default `MODEL_PROVIDER=ollama` for a fresh `.env`, but they don't override `OLLAMA_MODEL` — it's still worth setting `OLLAMA_MODEL=qwen2.5:7b` by hand instead of the generated default (`llama3.1`).
+`scripts/setup.sh` / `scripts/setup.ps1` auto-detect a running Ollama daemon and default `MODEL_PROVIDER=ollama` for a fresh `.env`, but they don't override `OLLAMA_MODEL` — it's still worth setting `OLLAMA_MODEL=gemma4:e4b` by hand instead of the generated default (`llama3.1`).
 
 ## Logging
 

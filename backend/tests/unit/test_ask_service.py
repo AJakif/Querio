@@ -6,6 +6,7 @@ from app.domain.models import Answer, ClarifyingQuestion, SqlQuery
 from app.repositories.memory.schema_repository_memory import InMemorySchemaRepository
 from app.repositories.memory.query_repository_memory import InMemoryQueryRepository
 from app.agent.agent import FakeSqlGenerator, GeneratedSQL
+from app.agent.planner import FakePlanner
 
 
 class FakeSqlGeneratorWithClarification(FakeSqlGenerator):
@@ -93,6 +94,13 @@ class FakeSqlGeneratorConnectError(FakeSqlGenerator):
         raise ConnectionError("All connection attempts failed")
 
 
+class FakePlannerModelError(FakePlanner):
+    """Simulates a local model producing invalid structured output the
+    provider adapter can't parse (e.g. pydantic_ai.UnexpectedModelBehavior)."""
+    async def plan(self, question: str, **kwargs):
+        raise RuntimeError("Exceeded maximum output retries (1)")
+
+
 class FakeSqlGeneratorRepairing(FakeSqlGenerator):
     def __init__(self):
         self.calls: list[str] = []
@@ -162,6 +170,22 @@ class TestAskService:
             sql_generator=FakeSqlGeneratorConnectError(),
             schema_repository=schema_repo,
             query_repository=query_repo,
+        )
+        result = await service.answer("How many orders?")
+        assert isinstance(result, Answer)
+        assert "unavailable" in result.text.lower()
+
+    @pytest.mark.asyncio
+    async def test_answer_returns_graceful_answer_when_planner_output_invalid(self, schema_repo, query_repo, sql_gen):
+        """A local model producing unparseable structured output (pydantic_ai
+        UnexpectedModelBehavior after exhausting retries) must not crash the
+        SSE stream; AskService must return a clean Answer instead."""
+        from app.services.ask_service import AskService
+        service = AskService(
+            sql_generator=sql_gen,
+            schema_repository=schema_repo,
+            query_repository=query_repo,
+            planner=FakePlannerModelError(),
         )
         result = await service.answer("How many orders?")
         assert isinstance(result, Answer)
@@ -611,4 +635,264 @@ async def test_verified_cache_fires_when_wired_as_main_py_does():
     assert counting_gen.call_count == 0, (
         "SqlGenerator was called, meaning the cache was NOT consulted — "
         "check that main.py passes query_record_service=verification_service to AskService"
+    )
+
+
+# ---------------------------------------------------------------------------
+# REGRESSION Bug-3 — Verified-query cache path bypasses the SQL guardrail
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_verified_cache_rejects_invalid_stored_sql():
+    """Regression: cached SQL was executed without passing through validate_sql.
+    A stored SELECT with a disallowed pattern (e.g. UPDATE embedded via UNION) must
+    be rejected by the guardrail even when it comes from the verified cache, and the
+    service must fall through to the full LLM pipeline rather than executing it.
+
+    Here we store a DELETE statement (guardrail rejects non-SELECT) so validation
+    clearly fails; without the fix the cached SQL would be executed directly.
+    """
+    from app.repositories.memory.query_record_repository_memory import InMemoryQueryRecordRepository
+    from app.repositories.memory.schema_repository_memory import InMemorySchemaRepository
+    from app.repositories.memory.query_repository_memory import InMemoryQueryRepository
+    from app.services.ask_service import AskService
+    from app.services.verification_service import VerificationService
+    from app.domain.models import Fingerprint
+
+    qr_repo = InMemoryQueryRecordRepository()
+    v_svc = VerificationService(repo=qr_repo)
+    fps: list[Fingerprint] = []
+    # Store a non-SELECT statement — guardrail must reject it
+    await v_svc.register_query(
+        query_id="q-bad-cached",
+        sql="DELETE FROM fct_orders",
+        author="alice",
+        question="how many orders?",
+        fingerprints=fps,
+    )
+    await v_svc.verify("q-bad-cached", "bob", fps)
+
+    schema_repo = InMemorySchemaRepository()
+    query_repo = InMemoryQueryRepository()
+    query_repo.set_return_rows([{"total": 99}])
+
+    counting_gen = CountingSqlGenerator()
+    service = AskService(
+        sql_generator=counting_gen,
+        schema_repository=schema_repo,
+        query_repository=query_repo,
+        query_record_service=v_svc,
+    )
+
+    result = await service.answer("how many orders?")
+
+    # Guardrail must reject stored SQL → falls through to full pipeline → SqlGenerator called
+    assert counting_gen.call_count >= 1, (
+        "SqlGenerator was not called — the cache served an unvalidated DELETE statement"
+    )
+    # The DELETE must not have been dispatched to the query repo
+    assert not any("DELETE" in sql for sql in query_repo.executed_sql), (
+        "DELETE statement was dispatched to the query repo — guardrail was bypassed"
+    )
+
+
+# ---------------------------------------------------------------------------
+# REGRESSION Bug-5 — SQL retry exhaustion after 3 attempts
+# ---------------------------------------------------------------------------
+
+
+class FakeSqlGeneratorAlwaysFails(FakeSqlGenerator):
+    """Generates SQL that the FakeQueryRepositoryAlwaysFails will always reject."""
+
+    async def generate(self, question: str, **kwargs) -> GeneratedSQL:
+        return GeneratedSQL(
+            sql="SELECT COUNT(*) FROM fct_orders LIMIT 100",
+            explanation="Counting orders.",
+        )
+
+
+class FakeQueryRepositoryAlwaysFails:
+    """Always raises a schema error to exercise the repair loop."""
+
+    def __init__(self) -> None:
+        self.call_count: int = 0
+        self.executed_sql: list[str] = []
+
+    async def execute(self, sql: str) -> list[dict]:
+        self.executed_sql.append(sql)
+        is_instrumentation = (
+            sql.strip().upper().startswith("EXPLAIN")
+            or sql.strip().upper().startswith("SELECT DISTINCT")
+        )
+        if not is_instrumentation:
+            self.call_count += 1
+            raise RuntimeError("column fct_orders.nonexistent does not exist")
+        return []
+
+
+@pytest.mark.asyncio
+async def test_sql_retried_up_to_three_times_before_rephrase():
+    """Regression: SQL failures were retried only once (allow_repair=True→False).
+    After the fix, up to 3 repair attempts are made before the rephrase message is returned.
+    This test uses a generator that always fails so all 3 budgeted attempts are consumed."""
+    from app.services.ask_service import AskService
+    from app.repositories.memory.schema_repository_memory import InMemorySchemaRepository
+
+    schema_repo = InMemorySchemaRepository()
+    always_fails_repo = FakeQueryRepositoryAlwaysFails()
+    service = AskService(
+        sql_generator=FakeSqlGeneratorAlwaysFails(),
+        schema_repository=schema_repo,
+        query_repository=always_fails_repo,
+    )
+
+    result = await service.answer("How many orders?")
+
+    assert isinstance(result, Answer)
+    # Rephrase message must be surfaced after exhausting all retries
+    assert "rephrase" in result.text.lower() or "couldn't" in result.text.lower()
+    # The main SQL must have been dispatched 3 times (initial + 2 repairs = 3 attempts)
+    assert always_fails_repo.call_count >= 3, (
+        f"Expected at least 3 SQL dispatch attempts, got {always_fails_repo.call_count}. "
+        "Fix: repair_attempt counter must allow up to _MAX_REPAIR_ATTEMPTS=3."
+    )
+
+
+# ---------------------------------------------------------------------------
+# REGRESSION Bug-6 — Empty result sets must produce a stat-only AnswerSpec
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_empty_result_produces_answer_spec_with_headline():
+    """Regression: empty query results returned a bare string with no answer_spec,
+    so the frontend had no stat card, assumptions, or restatement to render.
+    After the fix, an empty result must yield an AnswerSpec with a headline and
+    assumptions_ref populated from the plan."""
+    from app.services.ask_service import AskService
+    from app.repositories.memory.schema_repository_memory import InMemorySchemaRepository
+    from app.repositories.memory.query_repository_memory import InMemoryQueryRepository
+    from app.agent.planner import FakePlanner
+    from app.agent.contracts import PlanResult, Assumption
+
+    class EmptyRowPlanner(FakePlanner):
+        async def plan(self, question: str, **kwargs) -> PlanResult:
+            return PlanResult(
+                ambiguity_score=0.0,
+                assumptions=[Assumption(term="status", resolution="delivered", alternatives=[])],
+            )
+
+    schema_repo = InMemorySchemaRepository()
+    query_repo = InMemoryQueryRepository()
+    query_repo.set_return_rows([])  # empty result
+
+    service = AskService(
+        sql_generator=FakeSqlGenerator(),
+        schema_repository=schema_repo,
+        query_repository=query_repo,
+        planner=EmptyRowPlanner(),
+    )
+
+    result = await service.answer("How many delivered orders in 2099?")
+
+    assert isinstance(result, Answer)
+    assert result.answer_spec is not None, "Empty result must produce an answer_spec (stat-only)"
+    assert result.answer_spec.headline.value is not None
+    assert result.answer_spec.response_type == "stat"
+    # assumptions_ref must be populated so the frontend can render assumption chips
+    assert len(result.answer_spec.assumptions_ref) >= 1
+
+
+# ---------------------------------------------------------------------------
+# REGRESSION Bug-7 — /ask response carries verifier name for verified cached query
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_verified_cache_hit_includes_verifier_name():
+    """Regression: /ask responses for verified cached queries carried no verifier_name,
+    so the frontend BadgeRow could never show 'Verified by {name}'.
+    After the fix, a cache hit must populate result.verifier_name from the record."""
+    from app.repositories.memory.query_record_repository_memory import InMemoryQueryRecordRepository
+    from app.repositories.memory.schema_repository_memory import InMemorySchemaRepository
+    from app.repositories.memory.query_repository_memory import InMemoryQueryRepository
+    from app.services.ask_service import AskService
+    from app.services.verification_service import VerificationService
+    from app.domain.models import Fingerprint
+
+    qr_repo = InMemoryQueryRecordRepository()
+    v_svc = VerificationService(repo=qr_repo)
+    fps: list[Fingerprint] = []
+    await v_svc.register_query(
+        query_id="q-verifier-name",
+        sql="SELECT COUNT(*) AS total FROM fct_orders LIMIT 100",
+        author="alice",
+        question="total completed orders",
+        fingerprints=fps,
+    )
+    await v_svc.verify("q-verifier-name", "carol", fps)
+
+    schema_repo = InMemorySchemaRepository()
+    query_repo = InMemoryQueryRepository()
+    query_repo.set_return_rows([{"total": 7}])
+
+    service = AskService(
+        sql_generator=FakeSqlGenerator(),
+        schema_repository=schema_repo,
+        query_repository=query_repo,
+        query_record_service=v_svc,
+    )
+
+    result = await service.answer("total completed orders")
+
+    assert isinstance(result, Answer)
+    assert result.verifier_name == "carol", (
+        f"verifier_name should be 'carol', got {result.verifier_name!r}"
+    )
+    assert result.badge_state == "verified"
+
+
+# ---------------------------------------------------------------------------
+# REGRESSION Bug-9 — suppression_reason must appear in aggregator trace step
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_aggregator_trace_step_includes_suppression_reason():
+    """Regression: when a chart is suppressed, the aggregator trace step omitted
+    suppression_reason, making it invisible in the workbench drawer.
+    After the fix, on_step('aggregator', ...) must include suppression_reason."""
+    from app.services.ask_service import AskService
+    from app.repositories.memory.schema_repository_memory import InMemorySchemaRepository
+    from app.repositories.memory.query_repository_memory import InMemoryQueryRepository
+
+    schema_repo = InMemorySchemaRepository()
+    query_repo = InMemoryQueryRepository()
+    # Single-value result → FakeAggregator suppresses chart with suppression_reason
+    query_repo.set_return_rows([{"total_orders": 42}])
+
+    captured_steps: list[tuple[str, dict]] = []
+
+    async def capture_on_step(stage: str, detail: dict) -> None:
+        captured_steps.append((stage, detail))
+
+    service = AskService(
+        sql_generator=FakeSqlGenerator(),
+        schema_repository=schema_repo,
+        query_repository=query_repo,
+    )
+
+    result = await service.answer("How many orders?", on_step=capture_on_step)
+
+    assert isinstance(result, Answer)
+    aggregator_steps = [d for stage, d in captured_steps if stage == "aggregator"]
+    assert aggregator_steps, "Expected at least one 'aggregator' trace step"
+    agg_detail = aggregator_steps[0]
+    assert "suppression_reason" in agg_detail, (
+        "aggregator trace step must carry suppression_reason key"
+    )
+    # Single-value result suppresses chart → suppression_reason must be non-None
+    assert agg_detail["suppression_reason"] is not None, (
+        f"suppression_reason should be non-null for stat-only result, got {agg_detail}"
     )

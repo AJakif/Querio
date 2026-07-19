@@ -101,6 +101,9 @@ class AnswerResponse(BaseModel):
     answer_spec: AnswerSpecResponse | None = None
     dropped_claim_count: int = 0
     result_rows: list[dict[str, Any]] | None = None
+    verifier_name: str | None = None
+    badge_state: str | None = None
+    query_id: str | None = None
 
 
 class ClarifyingQuestionResponse(BaseModel):

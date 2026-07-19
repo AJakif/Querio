@@ -49,6 +49,13 @@ class TestLocalStackComposeContract:
         assert "DB_SCHEMA: marts" in backend_body
         assert "condition: service_completed_successfully" in backend_body
 
+    def test_backend_uses_host_gateway_for_docker_ollama(self):
+        compose = _compose_text()
+        backend_body = _service_body(compose, "backend")
+
+        assert "OLLAMA_BASE_URL_DOCKER" in backend_body
+        assert "host.docker.internal:11434/v1" in backend_body
+
     def test_dbt_service_runs_tests_before_backend_starts(self):
         compose = _compose_text()
         dbt_body = _service_body(compose, "dbt")
@@ -114,5 +121,5 @@ class TestReviewerDocsContract:
 
         assert "http://localhost:8081" in readme
         assert "scheduled_data_refresh" in readme
-        assert "append_synthetic_orders.py" in readme
+        assert "dbt run" in readme
         assert "run history" in readme.lower()

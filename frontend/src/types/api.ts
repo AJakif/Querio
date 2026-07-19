@@ -109,6 +109,8 @@ export interface AnswerResponse {
   conversation_id: string | null
   answer_spec?: AnswerSpec | null
   badge_state?: BadgeState | null
+  verifier_name?: string | null
+  query_id?: string | null
   validation?: ValidationResultResponse | null
   /** Raw query result rows — used for CSV export regardless of response_type. */
   result_rows?: Record<string, unknown>[] | null

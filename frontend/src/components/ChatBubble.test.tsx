@@ -131,4 +131,16 @@ describe('ChatBubble — confirm_first gate', () => {
     fireEvent.click(screen.getByTestId('confirm-button'))
     expect(onConfirm).toHaveBeenCalledWith('confirm-abc', [])
   })
+
+  it('clicking a chip opens an editable input, and confirming after an edit sends the amendment', () => {
+    const onConfirm = vi.fn()
+    render(<ChatBubble message={confirmMsg} onConfirm={onConfirm} />)
+
+    fireEvent.click(screen.getByTestId('chip-recent'))
+    const input = screen.getByLabelText('Edit assumption: recent')
+    fireEvent.change(input, { target: { value: 'last 7 days' } })
+    fireEvent.click(screen.getByTestId('confirm-button'))
+
+    expect(onConfirm).toHaveBeenCalledWith('confirm-abc', [{ term: 'recent', resolution: 'last 7 days' }])
+  })
 })

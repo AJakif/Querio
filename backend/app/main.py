@@ -70,6 +70,7 @@ def _build_sql_generator(schema_repo: SchemaRepository) -> SqlGenerator:
             openai_api_key=settings.openai_api_key.get_secret_value() if settings.openai_api_key else None,
             anthropic_api_key=settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None,
             ollama_base_url=settings.ollama_base_url,
+            ollama_num_ctx=settings.ollama_num_ctx,
         )
     logger.warning("No LLM API keys configured, using fake SQL generator")
     return FakeSqlGenerator()
@@ -90,6 +91,7 @@ def _build_planner(schema_repo: SchemaRepository) -> Planner:
             openai_api_key=settings.openai_api_key.get_secret_value() if settings.openai_api_key else None,
             anthropic_api_key=settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None,
             ollama_base_url=settings.ollama_base_url,
+            ollama_num_ctx=settings.ollama_num_ctx,
         )
     logger.warning("No LLM API keys configured, using fake planner")
     return FakePlanner()
@@ -109,6 +111,7 @@ def _build_aggregator() -> Aggregator:
             openai_api_key=settings.openai_api_key.get_secret_value() if settings.openai_api_key else None,
             anthropic_api_key=settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None,
             ollama_base_url=settings.ollama_base_url,
+            ollama_num_ctx=settings.ollama_num_ctx,
         )
     logger.warning("No LLM API keys configured, using fake aggregator")
     return FakeAggregator()

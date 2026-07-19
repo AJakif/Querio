@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     model_name: str = "openai:gpt-4o"
     ollama_model: str = "llama3.1"
     ollama_base_url: str = "http://localhost:11434/v1"
+    ollama_num_ctx: int = 8192
     openai_api_key: SecretStr | None = Field(default=None, repr=False)
     openai_api_key_file: str | None = None
     anthropic_api_key: SecretStr | None = Field(default=None, repr=False)
@@ -69,7 +70,7 @@ class Settings(BaseSettings):
     querio_secrets_file: str = str(PROJECT_ROOT / ".env.secrets")
     log_level: str | None = None
     max_rows: int = 1000
-    query_timeout_ms: int = 5000
+    query_timeout_ms: int = 15000
     db_schema: str = "marts"
     ambiguity_threshold: float = 0.6
     scan_cost_threshold: int = 1_000_000

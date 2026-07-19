@@ -226,4 +226,19 @@ describe('AnswerCard — workbench drawer', () => {
     expect(exportEl).not.toHaveTextContent('PNG')
     expect(exportEl).not.toHaveTextContent('SVG')
   })
+
+  // REGRESSION Bug-4: restatement was nested inside the chart-only conditional,
+  // so stat-only answers (single-value results) never rendered it.
+  it('renders restatement text for stat-only answers (REGRESSION Bug-4)', () => {
+    render(<AnswerCard spec={baseSpec} badge="unverified" />)
+    // baseSpec has chart_spec=null → stat route; restatement must still appear
+    expect(screen.getByTestId('answer-restatement')).toHaveTextContent('Net revenue for Q2 2024')
+  })
+
+  // REGRESSION Bug-7: BadgeRow never showed the verifier's name; it only rendered the
+  // generic "Verified" label even when the backend supplied a verifier_name.
+  it('renders "Verified by {name}" when badge is verified and verifierName is supplied (REGRESSION Bug-7)', () => {
+    render(<AnswerCard spec={baseSpec} badge="verified" verifierName="carol" />)
+    expect(screen.getByTestId('badge-row')).toHaveTextContent('Verified by carol')
+  })
 })

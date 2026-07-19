@@ -118,7 +118,17 @@ class AskService:
         if context_note:
             question = f"[Dataset context: {context_note}]\n\n{question}"
 
-        plan_result = await self._planner.plan(question, schema_repo_override=schema_repo)
+        try:
+            plan_result = await self._planner.plan(question, schema_repo_override=schema_repo)
+        except Exception as exc:
+            logger.warning(
+                "Planner failed — provider unreachable or invalid output",
+                extra={"request_id": request_id, "error": str(exc), "error_type": exc.__class__.__name__},
+            )
+            return Answer(
+                text="Sorry, the AI model is currently unavailable. Please check that your model provider is running and try again.",
+                conversation_id=conversation_id,
+            )
         logger.debug(
             "Planner completed",
             extra={
@@ -261,8 +271,18 @@ class AskService:
         )
         await _emit(on_step, "cache_hit", {"query_id": record.id, "sql": record.sql})
 
+        # Guardrail: stored SQL must still pass validation before execution.
+        # Drift or tampering could leave a formerly-valid query in a now-invalid state.
+        _safe_sql, _sql_error = validate_sql(record.sql, max_rows=settings.max_rows)
+        if _sql_error:
+            logger.warning(
+                "Verified cache SQL failed guardrail; falling through to full pipeline",
+                extra={"request_id": request_id, "query_id": record.id, "guardrail_error": _sql_error},
+            )
+            return None
+
         try:
-            rows = await self._query_repo.execute(record.sql)
+            rows = await self._query_repo.execute(_safe_sql or record.sql)
         except Exception as exc:
             logger.warning(
                 "Verified cache SQL execution failed; falling through to full pipeline",
@@ -273,13 +293,19 @@ class AskService:
         dummy = GeneratedSQL(sql=record.sql, explanation="Verified cached query")
         text = _format_answer(rows, dummy) if rows else "The query returned no results."
         chart = _build_chart(question, rows)
+        last_verify = record.last_verification()
         return Answer(
             text=text,
             chart=chart,
             sql=SqlQuery(sql=record.sql, explanation="Verified cached query"),
             conversation_id=conversation_id,
             result_rows=rows,
+            verifier_name=last_verify.actor if last_verify else None,
+            badge_state=record.badge_state().value,
+            query_id=record.id,
         )
+
+    _MAX_REPAIR_ATTEMPTS = 3
 
     async def _do_execute(
         self,
@@ -288,7 +314,7 @@ class AskService:
         conversation_id: str | None = None,
         request_id: str | None = None,
         started_at: float | None = None,
-        allow_repair: bool = True,
+        repair_attempt: int = 0,
         query_repo: QueryRepository | None = None,
         schema_repo: SchemaRepository | None = None,
         plan_result: PlanResult | None = None,
@@ -361,15 +387,18 @@ class AskService:
         try:
             rows = await effective_query_repo.execute(effective_sql)
         except Exception as exc:
-            if allow_repair and _is_retriable_schema_error(exc):
+            if repair_attempt < self._MAX_REPAIR_ATTEMPTS:
                 logger.warning(
-                    "SQL execution failed with retriable schema error; requesting model correction",
+                    "SQL execution failed; requesting model correction (attempt %d/%d)",
+                    repair_attempt + 1,
+                    self._MAX_REPAIR_ATTEMPTS,
                     extra={
                         "request_id": request_id,
                         "conversation_id": conversation_id,
                         "generated_sql": generated.sql,
                         "error_type": exc.__class__.__name__,
                         "execution_time_ms": _elapsed_ms(started_at),
+                        "repair_attempt": repair_attempt,
                     },
                 )
                 try:
@@ -400,7 +429,7 @@ class AskService:
                     conversation_id,
                     request_id,
                     started_at,
-                    allow_repair=False,
+                    repair_attempt=repair_attempt + 1,
                     query_repo=query_repo,
                     schema_repo=schema_repo,
                     plan_result=plan_result,
@@ -408,7 +437,8 @@ class AskService:
                 )
 
             logger.exception(
-                "SQL execution failed",
+                "SQL execution failed after %d repair attempt(s); giving up",
+                self._MAX_REPAIR_ATTEMPTS,
                 extra={
                     "request_id": request_id,
                     "conversation_id": conversation_id,
@@ -439,12 +469,25 @@ class AskService:
 
         if not rows:
             logger.info("Query returned no rows", extra={"conversation_id": conversation_id})
+            from app.agent.contracts import AnswerSpec, Headline
+            empty_spec = AnswerSpec(
+                response_type="stat",
+                headline=Headline(value="0", label="results", sign="neutral"),
+                restatement="The query returned no results.",
+                chart_spec=None,
+                suppression_reason="empty result set",
+                claims=[],
+                followups=[],
+                assumptions_ref=list(plan_result.assumptions) if plan_result else [],
+                dropped_claim_count=0,
+            )
             return Answer(
                 text="The query returned no results.",
                 sql=SqlQuery(sql=generated.sql, explanation=generated.explanation),
                 conversation_id=conversation_id,
                 plan=plan_result,
                 validation=validation_result,
+                answer_spec=empty_spec,
             )
 
         answer_spec = None
@@ -452,6 +495,12 @@ class AskService:
             answer_spec = await self._aggregator.aggregate(
                 question, rows, plan_result or PlanResult()
             )
+            # Normalize: response_type must be consistent with chart_spec presence.
+            # Don't trust the LLM's response_type field blindly.
+            if answer_spec is not None:
+                correct_type = "chart" if answer_spec.chart_spec is not None else "stat"
+                if answer_spec.response_type != correct_type:
+                    answer_spec = answer_spec.model_copy(update={"response_type": correct_type})
         except Exception as exc:
             logger.warning("Aggregator failed, continuing without answer_spec", extra={"error": str(exc)})
 
@@ -461,6 +510,7 @@ class AskService:
             {
                 "headline": answer_spec.headline.value if answer_spec is not None else None,
                 "claims_count": len(answer_spec.claims) if answer_spec is not None else 0,
+                "suppression_reason": answer_spec.suppression_reason if answer_spec is not None else None,
             },
         )
 

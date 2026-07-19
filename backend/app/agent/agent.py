@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from pydantic import BaseModel
 from pydantic_ai import Agent as PydanticAgent
 from pydantic_ai.models.anthropic import AnthropicModel
-from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
@@ -43,6 +43,7 @@ def _build_model(
     openai_api_key: str | None,
     anthropic_api_key: str | None,
     ollama_base_url: str | None = None,
+    ollama_num_ctx: int | None = None,
 ):
     logger.debug("Building model adapter", extra={"model_name": model_name})
     provider_name, separator, provider_model = model_name.partition(":")
@@ -65,6 +66,9 @@ def _build_model(
         return OpenAIChatModel(
             provider_model,
             provider=OpenAIProvider(base_url=ollama_base_url, api_key="ollama"),
+            settings=OpenAIChatModelSettings(
+                extra_body={"options": {"num_ctx": ollama_num_ctx or 8192}}
+            ),
         )
 
     if provider_name == "anthropic" and anthropic_api_key:
@@ -89,10 +93,11 @@ class PydanticAiSqlGenerator(SqlGenerator):
         openai_api_key: str | None = None,
         anthropic_api_key: str | None = None,
         ollama_base_url: str | None = None,
+        ollama_num_ctx: int | None = None,
     ):
         logger.info("Initializing Pydantic AI SQL generator", extra={"model_name": model_name})
         self._agent = PydanticAgent(
-            _build_model(model_name, openai_api_key, anthropic_api_key, ollama_base_url),
+            _build_model(model_name, openai_api_key, anthropic_api_key, ollama_base_url, ollama_num_ctx),
             system_prompt=SYSTEM_PROMPT,
             output_type=GeneratedSQL,
             deps_type=SchemaRepository,

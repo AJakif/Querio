@@ -143,6 +143,105 @@ class VerificationService:
         await self._repo.save(record)
         return record, drift_reasons
 
+    async def export_portable(self, query_id: str) -> dict:
+        """Serialise a QueryRecord to a plain JSON-serialisable dict (SRS VQ-6).
+
+        The returned dict contains everything needed to reconstruct the record on
+        another Querio instance — id, sql, author, question, fingerprints_at_run,
+        and the full verification history with ISO-8601 timestamps.
+        """
+        record = await self._get_or_raise(query_id)
+        return {
+            "id": record.id,
+            "sql": record.sql,
+            "author": record.author,
+            "question": record.question,
+            "fingerprints_at_run": [
+                {
+                    "table": fp.table,
+                    "column": fp.column,
+                    "schema_hash": fp.schema_hash,
+                    "value_hash": fp.value_hash,
+                }
+                for fp in record.fingerprints_at_run
+            ],
+            "history": [
+                {
+                    "event_type": ev.event_type.value,
+                    "actor": ev.actor,
+                    "timestamp": ev.timestamp.isoformat(),
+                    "fingerprints": [
+                        {
+                            "table": fp.table,
+                            "column": fp.column,
+                            "schema_hash": fp.schema_hash,
+                            "value_hash": fp.value_hash,
+                        }
+                        for fp in ev.fingerprints
+                    ],
+                    "drift_reason": ev.drift_reason,
+                }
+                for ev in record.history
+            ],
+        }
+
+    async def import_portable(
+        self,
+        data: dict,
+        current_fingerprints: list[Fingerprint],
+    ) -> QueryRecord:
+        """Reconstruct a QueryRecord from an export dict and detect staleness (SRS VQ-6).
+
+        If the imported record is Verified but its last-verified fingerprints differ
+        from current_fingerprints (schema drift), a needs_recheck event is appended
+        before the record is returned, matching the semantics of check_drift().
+        """
+
+        def _fp(d: dict) -> Fingerprint:
+            return Fingerprint(
+                table=d["table"],
+                column=d["column"],
+                schema_hash=d["schema_hash"],
+                value_hash=d.get("value_hash"),
+            )
+
+        def _ev(d: dict) -> VerificationEvent:
+            return VerificationEvent(
+                event_type=VerificationEventType(d["event_type"]),
+                actor=d["actor"],
+                timestamp=datetime.fromisoformat(d["timestamp"]),
+                fingerprints=[_fp(fp) for fp in d.get("fingerprints", [])],
+                drift_reason=d.get("drift_reason"),
+            )
+
+        record = QueryRecord(
+            id=data["id"],
+            sql=data["sql"],
+            author=data["author"],
+            question=data.get("question", ""),
+            fingerprints_at_run=[_fp(fp) for fp in data.get("fingerprints_at_run", [])],
+            history=[_ev(ev) for ev in data.get("history", [])],
+        )
+        await self._repo.save(record)
+
+        # Staleness check: only Verified records can drift to needs_recheck.
+        if record.badge_state() == BadgeState.verified:
+            last_verify = record.last_verification()
+            if last_verify is not None:
+                drift_reasons = _detect_drift(last_verify.fingerprints, current_fingerprints)
+                if drift_reasons:
+                    record.history.append(
+                        VerificationEvent(
+                            event_type=VerificationEventType.needs_recheck,
+                            actor="system",
+                            timestamp=datetime.now(tz=timezone.utc),
+                            drift_reason="; ".join(drift_reasons),
+                        )
+                    )
+                    await self._repo.save(record)
+
+        return record
+
     async def get_record(self, query_id: str) -> QueryRecord:
         return await self._get_or_raise(query_id)
 
