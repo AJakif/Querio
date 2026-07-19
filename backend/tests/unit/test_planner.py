@@ -25,6 +25,7 @@ class ScriptedPlanner(Planner):
         self,
         question: str,
         schema_repo_override: SchemaRepository | None = None,
+        session_brief: str = "",
     ) -> PlanResult:
         return self._result
 

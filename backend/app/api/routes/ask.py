@@ -58,15 +58,18 @@ _TIMEOUT_MESSAGE = (
 
 async def get_ask_service() -> AskService:
     from app.main import app_state
+
     return app_state.ask_service
 
 
-
-def _resolve_session(session_id: str | None) -> tuple[str | None, str, SchemaRepository | None]:
+def _resolve_session(
+    session_id: str | None,
+) -> tuple[str | None, str, SchemaRepository | None]:
     if not session_id:
         return None, "", None
     session_schema = f"session_{session_id.replace('-', '_')}"
     from app.main import app_state
+
     context_note = ""
     schema_repo_override: SchemaRepository | None = None
     if app_state is not None:
@@ -90,7 +93,12 @@ async def ask(
     body: AskRequest,
     service: AskService = Depends(get_ask_service),
     chat_history_service: ChatHistoryService = Depends(get_chat_history_service),
-) -> AnswerResponse | ClarifyingQuestionResponse | ClarifyResponseResponse | ConfirmFirstResponse:
+) -> (
+    AnswerResponse
+    | ClarifyingQuestionResponse
+    | ClarifyResponseResponse
+    | ConfirmFirstResponse
+):
     request_id = str(uuid.uuid4())
     logger.info(
         "Received /ask request",
@@ -102,7 +110,18 @@ async def ask(
             "question": body.question,
         },
     )
-    session_schema, context_note, schema_repo_override = _resolve_session(body.session_id)
+    session_schema, context_note, schema_repo_override = _resolve_session(
+        body.session_id
+    )
+
+    prior_brief = ""
+    if body.chat_session_id:
+        history = await chat_history_service.get_history(body.chat_session_id)
+        if history:
+            _, turns = history
+            if turns:
+                last_spec = turns[-1].answer_json.get("answer_spec") or {}
+                prior_brief = last_spec.get("session_brief", "") or ""
 
     timed_out = False
     try:
@@ -115,6 +134,7 @@ async def ask(
                 session_schema=session_schema,
                 context_note=context_note,
                 schema_repo_override=schema_repo_override,
+                session_brief=prior_brief,
             ),
             timeout=ASK_TIMEOUT_SECONDS,
         )
@@ -145,7 +165,13 @@ async def ask(
 async def ask_confirm(
     body: ConfirmRequest,
     service: AskService = Depends(get_ask_service),
-) -> AnswerResponse | ClarifyingQuestionResponse | ClarifyResponseResponse | ConfirmFirstResponse:
+    chat_history_service: ChatHistoryService = Depends(get_chat_history_service),
+) -> (
+    AnswerResponse
+    | ClarifyingQuestionResponse
+    | ClarifyResponseResponse
+    | ConfirmFirstResponse
+):
     """Execute a previously gated query using the user's confirmed (or amended) assumptions."""
     request_id = str(uuid.uuid4())
     logger.info(
@@ -156,20 +182,52 @@ async def ask_confirm(
             "amendment_count": len(body.amendments),
         },
     )
+
+    prior_brief = ""
+    if body.chat_session_id:
+        history = await chat_history_service.get_history(body.chat_session_id)
+        if history:
+            _, turns = history
+            if turns:
+                last_spec = turns[-1].answer_json.get("answer_spec") or {}
+                prior_brief = last_spec.get("session_brief", "") or ""
+
+    # Peek at the original question before answer_confirmed consumes the confirm state.
+    original_question = service.get_confirm_question(body.conversation_id) or ""
+
     amendments = [(a.term, a.resolution) for a in body.amendments]
+    timed_out = False
     try:
         result = await asyncio.wait_for(
             service.answer_confirmed(
                 confirm_id=body.conversation_id,
                 amendments=amendments,
                 request_id=request_id,
+                prior_brief=prior_brief,
             ),
             timeout=ASK_TIMEOUT_SECONDS,
         )
     except (TimeoutError, asyncio.CancelledError):
         logger.warning("Confirm request timed out", extra={"request_id": request_id})
         result = Answer(text=_TIMEOUT_MESSAGE, conversation_id=body.conversation_id)
-    return _build_response(result, request_id)
+        timed_out = True
+
+    response = _build_response(result, request_id)
+
+    if body.chat_session_id and isinstance(result, Answer) and not timed_out:
+        try:
+            await chat_history_service.record_turn(
+                body.chat_session_id,
+                original_question,
+                response.model_dump(mode="json"),  # type: ignore[union-attr]
+            )
+        except ChatSessionNotFoundError:
+            logger.warning(
+                "chat_session_id not found, skipping persistence (confirm)",
+                extra={"chat_session_id": body.chat_session_id},
+            )
+
+    return response
 
 
 @router.get("/ask/stream")
@@ -191,16 +249,31 @@ async def ask_stream(
     request_id = str(uuid.uuid4())
     logger.info(
         "Received /ask/stream request",
-        extra={"request_id": request_id, "conversation_id": conversation_id, "question": question},
+        extra={
+            "request_id": request_id,
+            "conversation_id": conversation_id,
+            "question": question,
+        },
     )
     session_schema, context_note, schema_repo_override = _resolve_session(session_id)
+
+    prior_brief = ""
+    if chat_session_id:
+        history = await chat_history_service.get_history(chat_session_id)
+        if history:
+            _, turns = history
+            if turns:
+                last_spec = turns[-1].answer_json.get("answer_spec") or {}
+                prior_brief = last_spec.get("session_brief", "") or ""
 
     queue: asyncio.Queue[tuple[str, dict[str, Any]]] = asyncio.Queue()
 
     async def on_step(stage: str, detail: dict[str, Any]) -> None:
         await queue.put((stage, detail))
 
-    async def run_pipeline() -> Answer | ClarifyingQuestion | ClarifyResponse | ConfirmFirst:
+    async def run_pipeline() -> (
+        Answer | ClarifyingQuestion | ClarifyResponse | ConfirmFirst
+    ):
         return await service.answer(
             question=question,
             conversation_id=conversation_id,
@@ -210,6 +283,7 @@ async def ask_stream(
             context_note=context_note,
             on_step=on_step,
             schema_repo_override=schema_repo_override,
+            session_brief=prior_brief,
         )
 
     async def event_generator():
@@ -229,7 +303,9 @@ async def ask_stream(
                     return
 
                 try:
-                    stage, detail = await asyncio.wait_for(queue.get(), timeout=SSE_POLL_INTERVAL_SECONDS)
+                    stage, detail = await asyncio.wait_for(
+                        queue.get(), timeout=SSE_POLL_INTERVAL_SECONDS
+                    )
                     yield _sse_event("step", {"stage": stage, "detail": detail})
                     last_sent_at = asyncio.get_running_loop().time()
                 except asyncio.TimeoutError:
@@ -272,8 +348,14 @@ async def ask_stream(
 
 
 def _build_response(
-    result: Answer | ClarifyingQuestion | ClarifyResponse | ConfirmFirst, request_id: str
-) -> AnswerResponse | ClarifyingQuestionResponse | ClarifyResponseResponse | ConfirmFirstResponse:
+    result: Answer | ClarifyingQuestion | ClarifyResponse | ConfirmFirst,
+    request_id: str,
+) -> (
+    AnswerResponse
+    | ClarifyingQuestionResponse
+    | ClarifyResponseResponse
+    | ConfirmFirstResponse
+):
     if isinstance(result, ClarifyResponse):
         return ClarifyResponseResponse(
             statement=result.statement,
@@ -410,7 +492,9 @@ def _build_answer_response(result: Answer, request_id: str) -> AnswerResponse:
                 y_key=spec.chart_spec.y_key,
                 emphasis_target=spec.chart_spec.emphasis_target,
                 y_keys=spec.chart_spec.y_keys,
-            ) if spec.chart_spec else None,
+            )
+            if spec.chart_spec
+            else None,
             suppression_reason=spec.suppression_reason,
             claims=[
                 ClaimResponse(
@@ -434,6 +518,7 @@ def _build_answer_response(result: Answer, request_id: str) -> AnswerResponse:
                 for a in spec.assumptions_ref
             ],
             dropped_claim_count=spec.dropped_claim_count,
+            session_brief=spec.session_brief,
         )
 
     logger.info(
@@ -455,7 +540,9 @@ def _build_answer_response(result: Answer, request_id: str) -> AnswerResponse:
         plan=plan_response,
         validation=validation_response,
         answer_spec=answer_spec_response,
-        dropped_claim_count=result.answer_spec.dropped_claim_count if result.answer_spec else 0,
+        dropped_claim_count=result.answer_spec.dropped_claim_count
+        if result.answer_spec
+        else 0,
         result_rows=result.result_rows,
         verifier_name=result.verifier_name,
         badge_state=result.badge_state,

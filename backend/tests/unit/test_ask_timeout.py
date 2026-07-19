@@ -13,6 +13,9 @@ class _TimesOutService:
     async def answer(self, **kwargs):
         raise TimeoutError("simulated pipeline timeout")
 
+    def get_confirm_question(self, confirm_id: str) -> str | None:
+        return None
+
     async def answer_confirmed(self, **kwargs):
         raise TimeoutError("simulated pipeline timeout")
 

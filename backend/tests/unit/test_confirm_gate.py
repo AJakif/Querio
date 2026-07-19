@@ -18,7 +18,7 @@ from app.services.ask_service import AskService
 
 
 class HighAmbiguityPlanner(Planner):
-    async def plan(self, question: str, schema_repo_override=None) -> PlanResult:
+    async def plan(self, question: str, schema_repo_override=None, session_brief: str = "") -> PlanResult:
         return PlanResult(
             ambiguity_score=0.9,
             assumptions=[Assumption(term="recent", resolution="last 30 days")],

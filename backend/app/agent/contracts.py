@@ -28,8 +28,10 @@ class ChartSpecModel(BaseModel):
     x_key: str
     y_key: str
     data: list[dict[str, Any]] = []
-    emphasis_target: str | None = None   # x_key value to render at full saturation (slice 8)
-    y_keys: list[str] | None = None      # ordered series keys for stacked_bar (slice 9)
+    emphasis_target: str | None = (
+        None  # x_key value to render at full saturation (slice 8)
+    )
+    y_keys: list[str] | None = None  # ordered series keys for stacked_bar (slice 9)
 
 
 class Headline(BaseModel):
@@ -48,12 +50,13 @@ class Claim(BaseModel):
 
 
 class AnswerSpec(BaseModel):
-    response_type: Literal['stat', 'chart'] = 'stat'  # explicit routing key (GAP-1)
+    response_type: Literal["stat", "chart"] = "stat"  # explicit routing key (GAP-1)
     headline: Headline
     restatement: str
     chart_spec: ChartSpecModel | None = None
-    suppression_reason: str | None = None   # non-null whenever chart_spec is None
+    suppression_reason: str | None = None  # non-null whenever chart_spec is None
     claims: list[Claim] = []
     followups: list[str] = []
     assumptions_ref: list[Assumption] = []  # copied from PlanResult (slice 1)
-    dropped_claim_count: int = 0            # slice 4 will set this; defaulted to 0
+    dropped_claim_count: int = 0  # slice 4 will set this; defaulted to 0
+    session_brief: str = ""  # T9b rolling brief; updated each turn by Aggregator

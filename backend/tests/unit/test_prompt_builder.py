@@ -1,12 +1,13 @@
 """Load-bearing tests for prompt_builder.py (T3 — shared-prefix prompt restructure).
 
-Test budget: 4 (new-feature budget 3–7, ceiling 10).
+Test budget: 5 (T9b adds 1; new-feature budget 3–7, ceiling 10).
 
 Tests:
   1. build_static_prefix is byte-deterministic (cache-hit guarantee).
   2. All three PydanticAi* agents share the same static prefix byte-for-byte.
   3. Aggregator prose-handoff fix: plan.interpretation prose is absent from the
      assembled user message; structured plan fields are present.
+  4. T9b: session_brief (prior_brief) appears before Question in assembled user msg.
 """
 from __future__ import annotations
 
@@ -120,3 +121,29 @@ class TestAggregatorProseHandoffFix:
         assert "profit_margin" in msg
         # Result rows must still be present
         assert "99999" in msg
+
+
+# ---------------------------------------------------------------------------
+# 4. T9b: prior_brief appears before Question in the assembled aggregator msg
+# ---------------------------------------------------------------------------
+
+class TestSessionBriefInAggregatorMsg:
+    def test_prior_brief_precedes_question_in_user_message(self) -> None:
+        """_build_aggregate_user_msg must insert prior_brief before 'Question:' so
+        the model sees context before the current ask — T9b prompt order invariant."""
+        from app.agent.aggregator import _build_aggregate_user_msg
+
+        brief = "Tables: fct_orders. Q: how many orders? → A: 42"
+        question = "what is the average order value?"
+        plan = PlanResult()
+        rows = [{"avg_value": 99.0}]
+
+        msg = _build_aggregate_user_msg(question=question, rows=rows, plan=plan, prior_brief=brief)
+
+        brief_pos = msg.find(brief)
+        question_pos = msg.find(f"Question: {question}")
+        assert brief_pos != -1, "prior_brief not found in assembled message"
+        assert question_pos != -1, "Question marker not found in assembled message"
+        assert brief_pos < question_pos, (
+            "prior_brief must appear before 'Question:' in the assembled user message"
+        )

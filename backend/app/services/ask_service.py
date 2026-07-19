@@ -4,10 +4,20 @@ from numbers import Number
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from app.agent.aggregator import Aggregator, FakeAggregator
-from app.agent.contracts import PlanResult, Assumption
+from app.agent.contracts import PlanResult, Assumption, AnswerSpec, Headline
 from app.agent.planner import FakePlanner, Planner
 from app.agent.validator import Validator
-from app.domain.models import Answer, BadgeState, SqlQuery, ClarifyingQuestion, ClarifyResponse, ConfirmFirst, ProxyAlternative, ChartSpec, ChartType, ValidationResult
+from app.domain.models import (
+    Answer,
+    SqlQuery,
+    ClarifyingQuestion,
+    ClarifyResponse,
+    ConfirmFirst,
+    ProxyAlternative,
+    ChartSpec,
+    ChartType,
+    ValidationResult,
+)
 from app.repositories.base import SchemaRepository, QueryRepository
 from app.agent.agent import SqlGenerator, GeneratedSQL
 from app.guardrails.sql_validator import validate_sql
@@ -63,16 +73,24 @@ class AskService:
     def query_repository(self) -> QueryRepository:
         return self._query_repo
 
-    async def _session_schema_repo(self, session_schema: str) -> SchemaRepository | None:
+    async def _session_schema_repo(
+        self, session_schema: str
+    ) -> SchemaRepository | None:
         if not session_schema:
             return None
-        from app.repositories.postgres.schema_repository_pg import PostgresSchemaRepository
+        from app.repositories.postgres.schema_repository_pg import (
+            PostgresSchemaRepository,
+        )
+
         return PostgresSchemaRepository(schema=session_schema)
 
     async def _session_query_repo(self, session_schema: str) -> QueryRepository | None:
         if not session_schema:
             return None
-        from app.repositories.postgres.query_repository_pg import PostgresQueryRepository
+        from app.repositories.postgres.query_repository_pg import (
+            PostgresQueryRepository,
+        )
+
         return PostgresQueryRepository(schema_override=session_schema)
 
     async def answer(
@@ -85,14 +103,21 @@ class AskService:
         context_note: str = "",
         on_step: "OnStep | None" = None,
         schema_repo_override: SchemaRepository | None = None,
+        session_brief: str = "",
     ) -> Answer | ClarifyingQuestion | ClarifyResponse | ConfirmFirst:
         request_id = request_id or str(uuid.uuid4())
         started_at = time.perf_counter()
         if schema_repo_override is not None:
             schema_repo: SchemaRepository | None = schema_repo_override
         else:
-            schema_repo = await self._session_schema_repo(session_schema) if session_schema else None
-        query_repo = await self._session_query_repo(session_schema) if session_schema else None
+            schema_repo = (
+                await self._session_schema_repo(session_schema)
+                if session_schema
+                else None
+            )
+        query_repo = (
+            await self._session_query_repo(session_schema) if session_schema else None
+        )
         logger.info(
             "Processing ask request",
             extra={
@@ -108,7 +133,9 @@ class AskService:
 
         # Verified-query cache check — before any LLM call.
         # Only applies to the default (non-session, non-clarification) path.
-        if not session_schema and not (conversation_id and clarification_answer is not None):
+        if not session_schema and not (
+            conversation_id and clarification_answer is not None
+        ):
             cache_answer = await self._try_verified_cache(
                 question, conversation_id, request_id, started_at, on_step
             )
@@ -119,11 +146,17 @@ class AskService:
             question = f"[Dataset context: {context_note}]\n\n{question}"
 
         try:
-            plan_result = await self._planner.plan(question, schema_repo_override=schema_repo)
+            plan_result = await self._planner.plan(
+                question, schema_repo_override=schema_repo, session_brief=session_brief
+            )
         except Exception as exc:
             logger.warning(
                 "Planner failed — provider unreachable or invalid output",
-                extra={"request_id": request_id, "error": str(exc), "error_type": exc.__class__.__name__},
+                extra={
+                    "request_id": request_id,
+                    "error": str(exc),
+                    "error_type": exc.__class__.__name__,
+                },
             )
             return Answer(
                 text="Sorry, the AI model is currently unavailable. Please check that your model provider is running and try again.",
@@ -164,7 +197,9 @@ class AskService:
                     "alternatives_count": len(clarify.alternatives),
                 },
             )
-            await _emit(on_step, "clarify", {"unresolved_terms": plan_result.unresolved_terms})
+            await _emit(
+                on_step, "clarify", {"unresolved_terms": plan_result.unresolved_terms}
+            )
             return clarify
 
         # Ambiguity gate: return confirm_first before running any SQL
@@ -187,7 +222,11 @@ class AskService:
                     "confirm_id": confirm_id,
                 },
             )
-            await _emit(on_step, "confirm_gate", {"gate_reason": "ambiguity", "confirm_id": confirm_id})
+            await _emit(
+                on_step,
+                "confirm_gate",
+                {"gate_reason": "ambiguity", "confirm_id": confirm_id},
+            )
             return ConfirmFirst(
                 plan=plan_result,
                 scan_cost=0,
@@ -200,19 +239,42 @@ class AskService:
             if ctx is None:
                 logger.warning(
                     "Conversation not found",
-                    extra={"request_id": request_id, "conversation_id": conversation_id},
+                    extra={
+                        "request_id": request_id,
+                        "conversation_id": conversation_id,
+                    },
                 )
-                return Answer(text="Sorry, I couldn't find that conversation. Please try asking your question again.")
+                return Answer(
+                    text="Sorry, I couldn't find that conversation. Please try asking your question again."
+                )
             self._conversation_store.complete(conversation_id)
-            combined_question = _combine_clarification(ctx.original_question, clarification_answer)
-            return await self._execute_answer(combined_question, conversation_id, request_id, started_at, plan_result=plan_result, schema_repo=schema_repo, query_repo=query_repo, on_step=on_step)
+            combined_question = _combine_clarification(
+                ctx.original_question, clarification_answer
+            )
+            return await self._execute_answer(
+                combined_question,
+                conversation_id,
+                request_id,
+                started_at,
+                plan_result=plan_result,
+                schema_repo=schema_repo,
+                query_repo=query_repo,
+                on_step=on_step,
+                session_brief=session_brief,
+            )
 
         try:
-            generated = await self._sql_generator.generate(question, schema_repo_override=schema_repo)
+            generated = await self._sql_generator.generate(
+                question, schema_repo_override=schema_repo, session_brief=session_brief
+            )
         except Exception as exc:
             logger.warning(
                 "SQL generator failed — provider unreachable",
-                extra={"request_id": request_id, "error": str(exc), "error_type": exc.__class__.__name__},
+                extra={
+                    "request_id": request_id,
+                    "error": str(exc),
+                    "error_type": exc.__class__.__name__,
+                },
             )
             return Answer(
                 text="Sorry, the AI model is currently unavailable. Please check that your model provider is running and try again.",
@@ -220,10 +282,16 @@ class AskService:
             )
 
         if not generated.requires_clarification:
-            await _emit(on_step, "sql_generator", {"sql": generated.sql, "explanation": generated.explanation})
+            await _emit(
+                on_step,
+                "sql_generator",
+                {"sql": generated.sql, "explanation": generated.explanation},
+            )
 
         if generated.requires_clarification:
-            conv_id = self._conversation_store.create(question, generated.clarification_options)
+            conv_id = self._conversation_store.create(
+                question, generated.clarification_options
+            )
             logger.info(
                 "Clarification required",
                 extra={
@@ -238,7 +306,18 @@ class AskService:
                 conversation_id=conv_id,
             )
 
-        return await self._do_execute(generated, question, conversation_id, request_id, started_at, plan_result=plan_result, query_repo=query_repo, schema_repo=schema_repo, on_step=on_step)
+        return await self._do_execute(
+            generated,
+            question,
+            conversation_id,
+            request_id,
+            started_at,
+            plan_result=plan_result,
+            query_repo=query_repo,
+            schema_repo=schema_repo,
+            on_step=on_step,
+            session_brief=session_brief,
+        )
 
     async def _try_verified_cache(
         self,
@@ -273,11 +352,17 @@ class AskService:
 
         # Guardrail: stored SQL must still pass validation before execution.
         # Drift or tampering could leave a formerly-valid query in a now-invalid state.
-        _safe_sql, _sql_error = validate_sql(record.sql, max_rows=settings.max_result_rows)
+        _safe_sql, _sql_error = validate_sql(
+            record.sql, max_rows=settings.max_result_rows
+        )
         if _sql_error:
             logger.warning(
                 "Verified cache SQL failed guardrail; falling through to full pipeline",
-                extra={"request_id": request_id, "query_id": record.id, "guardrail_error": _sql_error},
+                extra={
+                    "request_id": request_id,
+                    "query_id": record.id,
+                    "guardrail_error": _sql_error,
+                },
             )
             return None
 
@@ -286,7 +371,11 @@ class AskService:
         except Exception as exc:
             logger.warning(
                 "Verified cache SQL execution failed; falling through to full pipeline",
-                extra={"request_id": request_id, "query_id": record.id, "error": str(exc)},
+                extra={
+                    "request_id": request_id,
+                    "query_id": record.id,
+                    "error": str(exc),
+                },
             )
             return None
 
@@ -319,6 +408,7 @@ class AskService:
         schema_repo: SchemaRepository | None = None,
         plan_result: PlanResult | None = None,
         on_step: "OnStep | None" = None,
+        session_brief: str = "",
     ) -> Answer | ClarifyingQuestion | ConfirmFirst:
         effective_query_repo = query_repo or self._query_repo
         effective_schema_repo = schema_repo or self._schema_repo
@@ -343,20 +433,30 @@ class AskService:
                 effective_sql, effective_schema_repo, effective_query_repo
             )
         except Exception as exc:
-            logger.warning("Validator failed, continuing without validation", extra={"error": str(exc)})
+            logger.warning(
+                "Validator failed, continuing without validation",
+                extra={"error": str(exc)},
+            )
 
         await _emit(
             on_step,
             "validator",
             {
                 "scan_cost": validation_result.scan_cost if validation_result else 0,
-                "dependency_count": len(validation_result.dependency_set) if validation_result else 0,
-                "fingerprint_count": len(validation_result.fingerprints) if validation_result else 0,
+                "dependency_count": len(validation_result.dependency_set)
+                if validation_result
+                else 0,
+                "fingerprint_count": len(validation_result.fingerprints)
+                if validation_result
+                else 0,
             },
         )
 
         # Cost gate: return confirm_first before executing an expensive query
-        if validation_result and validation_result.scan_cost > settings.scan_cost_threshold:
+        if (
+            validation_result
+            and validation_result.scan_cost > settings.scan_cost_threshold
+        ):
             confirm_id = self._confirm_store.create(
                 ConfirmPendingState(
                     original_question=question,
@@ -375,7 +475,11 @@ class AskService:
                     "confirm_id": confirm_id,
                 },
             )
-            await _emit(on_step, "confirm_gate", {"gate_reason": "cost", "confirm_id": confirm_id})
+            await _emit(
+                on_step,
+                "confirm_gate",
+                {"gate_reason": "cost", "confirm_id": confirm_id},
+            )
             return ConfirmFirst(
                 plan=plan_result or PlanResult(),
                 scan_cost=validation_result.scan_cost,
@@ -383,7 +487,14 @@ class AskService:
                 gate_reason="cost",
             )
 
-        logger.debug("Executing SQL", extra={"request_id": request_id, "conversation_id": conversation_id, "sql": safe_sql})
+        logger.debug(
+            "Executing SQL",
+            extra={
+                "request_id": request_id,
+                "conversation_id": conversation_id,
+                "sql": safe_sql,
+            },
+        )
         try:
             rows = await effective_query_repo.execute(effective_sql)
         except Exception as exc:
@@ -409,7 +520,11 @@ class AskService:
                 except Exception as repair_exc:
                     logger.warning(
                         "SQL generator failed during repair — provider unreachable",
-                        extra={"request_id": request_id, "error": str(repair_exc), "error_type": repair_exc.__class__.__name__},
+                        extra={
+                            "request_id": request_id,
+                            "error": str(repair_exc),
+                            "error_type": repair_exc.__class__.__name__,
+                        },
                     )
                     return Answer(
                         text="Sorry, the AI model is currently unavailable. Please check that your model provider is running and try again.",
@@ -417,9 +532,12 @@ class AskService:
                         plan=plan_result,
                     )
                 if repaired.requires_clarification:
-                    conv_id = self._conversation_store.create(question, repaired.clarification_options)
+                    conv_id = self._conversation_store.create(
+                        question, repaired.clarification_options
+                    )
                     return ClarifyingQuestion(
-                        question=repaired.clarification_question or "What did you mean?",
+                        question=repaired.clarification_question
+                        or "What did you mean?",
                         options=repaired.clarification_options,
                         conversation_id=conv_id,
                     )
@@ -434,6 +552,7 @@ class AskService:
                     schema_repo=schema_repo,
                     plan_result=plan_result,
                     on_step=on_step,
+                    session_brief=session_brief,
                 )
 
             logger.exception(
@@ -468,8 +587,9 @@ class AskService:
         )
 
         if not rows:
-            logger.info("Query returned no rows", extra={"conversation_id": conversation_id})
-            from app.agent.contracts import AnswerSpec, Headline
+            logger.info(
+                "Query returned no rows", extra={"conversation_id": conversation_id}
+            )
             empty_spec = AnswerSpec(
                 response_type="stat",
                 headline=Headline(value="0", label="results", sign="neutral"),
@@ -480,6 +600,7 @@ class AskService:
                 followups=[],
                 assumptions_ref=list(plan_result.assumptions) if plan_result else [],
                 dropped_claim_count=0,
+                session_brief=session_brief,
             )
             return Answer(
                 text="The query returned no results.",
@@ -493,24 +614,45 @@ class AskService:
         answer_spec = None
         try:
             answer_spec = await self._aggregator.aggregate(
-                question, rows, plan_result or PlanResult()
+                question, rows, plan_result or PlanResult(), prior_brief=session_brief
             )
             # Normalize: response_type must be consistent with chart_spec presence.
             # Don't trust the LLM's response_type field blindly.
             if answer_spec is not None:
                 correct_type = "chart" if answer_spec.chart_spec is not None else "stat"
                 if answer_spec.response_type != correct_type:
-                    answer_spec = answer_spec.model_copy(update={"response_type": correct_type})
+                    answer_spec = answer_spec.model_copy(
+                        update={"response_type": correct_type}
+                    )
         except Exception as exc:
-            logger.warning("Aggregator failed, continuing without answer_spec", extra={"error": str(exc)})
+            logger.warning(
+                "Aggregator failed, continuing without answer_spec",
+                extra={"error": str(exc)},
+            )
+            # Carry the rolling brief forward so one transient aggregator failure
+            # doesn't wipe accumulated session context for the next turn.
+            if session_brief:
+                answer_spec = AnswerSpec(
+                    headline=Headline(value="", label="", sign="neutral"),
+                    restatement=_format_answer(rows, generated),
+                    suppression_reason="aggregator unavailable",
+                    session_brief=session_brief,
+                    assumptions_ref=list(plan_result.assumptions) if plan_result else [],
+                )
 
         await _emit(
             on_step,
             "aggregator",
             {
-                "headline": answer_spec.headline.value if answer_spec is not None else None,
-                "claims_count": len(answer_spec.claims) if answer_spec is not None else 0,
-                "suppression_reason": answer_spec.suppression_reason if answer_spec is not None else None,
+                "headline": answer_spec.headline.value
+                if answer_spec is not None
+                else None,
+                "claims_count": len(answer_spec.claims)
+                if answer_spec is not None
+                else 0,
+                "suppression_reason": answer_spec.suppression_reason
+                if answer_spec is not None
+                else None,
             },
         )
 
@@ -525,7 +667,9 @@ class AskService:
 
         # Derive legacy text from AnswerSpec for frontend compat; fall back to old formatter
         answer_text = (
-            answer_spec.restatement if answer_spec is not None else _format_answer(rows, generated)
+            answer_spec.restatement
+            if answer_spec is not None
+            else _format_answer(rows, generated)
         )
         chart = _build_chart(question, rows)
         return Answer(
@@ -549,21 +693,48 @@ class AskService:
         schema_repo: SchemaRepository | None = None,
         query_repo: QueryRepository | None = None,
         on_step: "OnStep | None" = None,
+        session_brief: str = "",
     ) -> Answer | ClarifyingQuestion | ConfirmFirst:
         try:
-            generated = await self._sql_generator.generate(question, schema_repo_override=schema_repo)
+            generated = await self._sql_generator.generate(
+                question, schema_repo_override=schema_repo, session_brief=session_brief
+            )
         except Exception as exc:
             logger.warning(
                 "SQL generator failed — provider unreachable",
-                extra={"request_id": request_id, "error": str(exc), "error_type": exc.__class__.__name__},
+                extra={
+                    "request_id": request_id,
+                    "error": str(exc),
+                    "error_type": exc.__class__.__name__,
+                },
             )
             return Answer(
                 text="Sorry, the AI model is currently unavailable. Please check that your model provider is running and try again.",
                 conversation_id=conversation_id,
             )
         if not generated.requires_clarification:
-            await _emit(on_step, "sql_generator", {"sql": generated.sql, "explanation": generated.explanation})
-        return await self._do_execute(generated, question, conversation_id, request_id, started_at, plan_result=plan_result, query_repo=query_repo, schema_repo=schema_repo, on_step=on_step)
+            await _emit(
+                on_step,
+                "sql_generator",
+                {"sql": generated.sql, "explanation": generated.explanation},
+            )
+        return await self._do_execute(
+            generated,
+            question,
+            conversation_id,
+            request_id,
+            started_at,
+            plan_result=plan_result,
+            query_repo=query_repo,
+            schema_repo=schema_repo,
+            on_step=on_step,
+            session_brief=session_brief,
+        )
+
+    def get_confirm_question(self, confirm_id: str) -> str | None:
+        """Return the original question for a pending confirm, without consuming the state."""
+        state = self._confirm_store.get(confirm_id)
+        return state.original_question if state is not None else None
 
     async def answer_confirmed(
         self,
@@ -571,6 +742,7 @@ class AskService:
         amendments: list[tuple[str, str]],
         request_id: str | None = None,
         on_step: "OnStep | None" = None,
+        prior_brief: str = "",
     ) -> Answer | ClarifyingQuestion | ConfirmFirst:
         """Execute a query whose gate was previously tripped, using the user's original
         or amended assumptions. ``amendments`` is a list of ``(term, new_resolution)``
@@ -579,7 +751,9 @@ class AskService:
         state = self._confirm_store.get(confirm_id)
         if state is None:
             logger.warning("Confirm state not found", extra={"confirm_id": confirm_id})
-            return Answer(text="Confirmation session not found. Please ask your question again.")
+            return Answer(
+                text="Confirmation session not found. Please ask your question again."
+            )
         self._confirm_store.complete(confirm_id)
 
         amended_plan = _apply_amendments(state.plan_result, amendments)
@@ -594,6 +768,7 @@ class AskService:
             schema_repo=state.schema_repo,
             query_repo=state.query_repo,
             on_step=on_step,
+            session_brief=prior_brief,
         )
 
 
@@ -611,7 +786,12 @@ async def _build_clarify_response(
 
     # Columns to skip — IDs and raw timestamps don't make good proxy metrics
     _ID_SUFFIXES = ("_id", "_key", "_hash", "_prefix")
-    _SKIP_TYPES = {"timestamp without time zone", "timestamp with time zone", "date", "boolean"}
+    _SKIP_TYPES = {
+        "timestamp without time zone",
+        "timestamp with time zone",
+        "date",
+        "boolean",
+    }
 
     numeric_cols: list[tuple[str, str]] = []  # (table, column)
     category_cols: list[tuple[str, str]] = []
@@ -624,7 +804,13 @@ async def _build_clarify_response(
                 continue
             if any(name_lower.endswith(sfx) for sfx in _ID_SUFFIXES):
                 continue
-            if col.data_type in ("numeric", "integer", "bigint", "real", "double precision"):
+            if col.data_type in (
+                "numeric",
+                "integer",
+                "bigint",
+                "real",
+                "double precision",
+            ):
                 numeric_cols.append((table, col.name))
             elif col.data_type in ("character varying", "text"):
                 category_cols.append((table, col.name))
@@ -635,33 +821,41 @@ async def _build_clarify_response(
     if numeric_cols:
         tbl, col = numeric_cols[0]
         label = f"Total {col.replace('_', ' ')} per month"
-        alternatives.append(ProxyAlternative(
-            label=label,
-            question=f"What is the total {col.replace('_', ' ')} per month?",
-        ))
+        alternatives.append(
+            ProxyAlternative(
+                label=label,
+                question=f"What is the total {col.replace('_', ' ')} per month?",
+            )
+        )
 
     # Proxy 2: numeric metric broken down by a category, or a second numeric metric
     if len(numeric_cols) > 1 and category_cols:
         tbl2, col2 = numeric_cols[1]
         _, cat_col = category_cols[0]
-        alternatives.append(ProxyAlternative(
-            label=f"Average {col2.replace('_', ' ')} by {cat_col.replace('_', ' ')}",
-            question=f"What is the average {col2.replace('_', ' ')} by {cat_col.replace('_', ' ')}?",
-        ))
+        alternatives.append(
+            ProxyAlternative(
+                label=f"Average {col2.replace('_', ' ')} by {cat_col.replace('_', ' ')}",
+                question=f"What is the average {col2.replace('_', ' ')} by {cat_col.replace('_', ' ')}?",
+            )
+        )
     elif len(numeric_cols) > 1:
         tbl2, col2 = numeric_cols[1]
-        alternatives.append(ProxyAlternative(
-            label=f"Average {col2.replace('_', ' ')}",
-            question=f"What is the average {col2.replace('_', ' ')}?",
-        ))
+        alternatives.append(
+            ProxyAlternative(
+                label=f"Average {col2.replace('_', ' ')}",
+                question=f"What is the average {col2.replace('_', ' ')}?",
+            )
+        )
 
     # Fallback: count-based proxy if fewer than 2 numeric columns exist
     if len(alternatives) < 2 and tables:
         count_table = tables[0]
-        alternatives.append(ProxyAlternative(
-            label=f"Total number of {count_table}",
-            question=f"How many {count_table} are there in total?",
-        ))
+        alternatives.append(
+            ProxyAlternative(
+                label=f"Total number of {count_table}",
+                question=f"How many {count_table} are there in total?",
+            )
+        )
 
     terms_str = " and ".join(f'"{t}"' for t in unresolved_terms)
     table_str = ", ".join(tables)
@@ -717,7 +911,9 @@ def _is_retriable_schema_error(exc: Exception) -> bool:
         "relation",
         "does not exist",
     )
-    return any(marker in error_name or marker in message for marker in schema_error_markers)
+    return any(
+        marker in error_name or marker in message for marker in schema_error_markers
+    )
 
 
 def _build_repair_prompt(question: str, failed_sql: str, exc: Exception) -> str:
@@ -739,12 +935,18 @@ def _build_chart(question: str, rows: list[dict]) -> ChartSpec | None:
         return None
 
     x_key = keys[0]
-    y_key = next((key for key in keys[1:] if all(_is_number(row.get(key)) for row in rows)), None)
+    y_key = next(
+        (key for key in keys[1:] if all(_is_number(row.get(key)) for row in rows)), None
+    )
     if y_key is None:
         return None
 
     lowered = question.lower()
-    chart_type = ChartType.line if any(token in lowered for token in ["trend", "month", "year", "over time"]) else ChartType.bar
+    chart_type = (
+        ChartType.line
+        if any(token in lowered for token in ["trend", "month", "year", "over time"])
+        else ChartType.bar
+    )
     title = "Trend" if chart_type == ChartType.line else "Comparison"
     return ChartSpec(
         chart_type=chart_type,
@@ -765,7 +967,9 @@ def _elapsed_ms(started_at: float | None) -> int | None:
     return round((time.perf_counter() - started_at) * 1000)
 
 
-def _apply_amendments(plan: PlanResult, amendments: list[tuple[str, str]]) -> PlanResult:
+def _apply_amendments(
+    plan: PlanResult, amendments: list[tuple[str, str]]
+) -> PlanResult:
     """Return a new PlanResult with amended resolutions merged in."""
     if not amendments:
         return plan

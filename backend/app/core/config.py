@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     log_level: str | None = None
     max_result_rows: int = 1000
     max_llm_rows: int = 50
+    session_brief_max_tokens: int = 300
     query_timeout_ms: int = 15000
     db_schema: str = "marts"
     ambiguity_threshold: float = 0.6
