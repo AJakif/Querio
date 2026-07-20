@@ -30,36 +30,29 @@ class RelationshipInfo:
 
 class SchemaRepository(ABC):
     @abstractmethod
-    async def get_tables(self) -> list[str]:
-        ...
+    async def get_tables(self) -> list[str]: ...
 
     @abstractmethod
-    async def get_columns(self, table: str) -> list[ColumnInfo]:
-        ...
+    async def get_columns(self, table: str) -> list[ColumnInfo]: ...
 
     @abstractmethod
-    async def get_relationships(self) -> list[RelationshipInfo]:
-        ...
+    async def get_relationships(self) -> list[RelationshipInfo]: ...
 
 
 class QueryRepository(ABC):
     @abstractmethod
-    async def execute(self, sql: str) -> list[dict]:
-        ...
+    async def execute(self, sql: str) -> list[dict]: ...
 
 
 class QueryRecordRepository(ABC):
     @abstractmethod
-    async def get(self, query_id: str) -> QueryRecord | None:
-        ...
+    async def get(self, query_id: str) -> QueryRecord | None: ...
 
     @abstractmethod
-    async def save(self, record: QueryRecord) -> None:
-        ...
+    async def save(self, record: QueryRecord) -> None: ...
 
     @abstractmethod
-    async def list_all(self) -> list[QueryRecord]:
-        ...
+    async def list_all(self) -> list[QueryRecord]: ...
 
 
 class ChatHistoryRepository(ABC):
@@ -89,24 +82,35 @@ class ChatHistoryRepository(ABC):
         self, account_username: str | None
     ) -> "list[ChatSession]": ...
 
+    @abstractmethod
+    async def mark_dataset_expired(self, session_id: str) -> None:
+        """Set dataset_expired_at = now() for the given chat session."""
+        ...
+
+    @abstractmethod
+    async def list_sessions_with_expired_datasets(
+        self, ttl_days: int
+    ) -> "list[ChatSession]":
+        """Return chat sessions eligible for dataset TTL cleanup.
+
+        Eligible: upload_session_id IS NOT NULL, dataset_expired_at IS NULL,
+        updated_at older than ttl_days days ago.
+        """
+        ...
+
 
 class AccountRepository(ABC):
     @abstractmethod
-    async def get_by_username(self, username: str) -> Account | None:
-        ...
+    async def get_by_username(self, username: str) -> Account | None: ...
 
     @abstractmethod
-    async def save(self, account: Account) -> None:
-        ...
+    async def save(self, account: Account) -> None: ...
 
     @abstractmethod
-    async def count(self) -> int:
-        ...
+    async def count(self) -> int: ...
 
     @abstractmethod
-    async def save_token(self, token: str, username: str) -> None:
-        ...
+    async def save_token(self, token: str, username: str) -> None: ...
 
     @abstractmethod
-    async def get_username_for_token(self, token: str) -> str | None:
-        ...
+    async def get_username_for_token(self, token: str) -> str | None: ...

@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     db_schema: str = "marts"
     ambiguity_threshold: float = 0.6
     scan_cost_threshold: int = 1_000_000
+    dataset_ttl_days: int = 30
 
     model_config = SettingsConfigDict(
         env_file=str(PROJECT_ROOT / ".env"),

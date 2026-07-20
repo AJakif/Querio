@@ -21,6 +21,7 @@ class PostgresChatHistoryRepository(ChatHistoryRepository):
         if self._conn_factory:
             return self._conn_factory()
         from app.core.db import get_connection
+
         return get_connection()
 
     async def create_session(
@@ -36,7 +37,7 @@ class PostgresChatHistoryRepository(ChatHistoryRepository):
                         """
                         INSERT INTO chat.sessions (id, account_username, upload_session_id)
                         VALUES (%s, %s, %s)
-                        RETURNING id, account_username, upload_session_id, created_at, updated_at
+                        RETURNING id, account_username, upload_session_id, created_at, updated_at, dataset_expired_at
                         """,
                         (session_id, account_username, upload_session_id),
                     )
@@ -52,7 +53,7 @@ class PostgresChatHistoryRepository(ChatHistoryRepository):
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        SELECT id, account_username, upload_session_id, created_at, updated_at
+                        SELECT id, account_username, upload_session_id, created_at, updated_at, dataset_expired_at
                         FROM chat.sessions WHERE id = %s
                         """,
                         (session_id,),
@@ -127,7 +128,7 @@ class PostgresChatHistoryRepository(ChatHistoryRepository):
                     if account_username is not None:
                         cur.execute(
                             """
-                            SELECT id, account_username, upload_session_id, created_at, updated_at
+                            SELECT id, account_username, upload_session_id, created_at, updated_at, dataset_expired_at
                             FROM chat.sessions
                             WHERE account_username = %s
                             ORDER BY created_at DESC
@@ -137,7 +138,7 @@ class PostgresChatHistoryRepository(ChatHistoryRepository):
                     else:
                         cur.execute(
                             """
-                            SELECT id, account_username, upload_session_id, created_at, updated_at
+                            SELECT id, account_username, upload_session_id, created_at, updated_at, dataset_expired_at
                             FROM chat.sessions
                             ORDER BY created_at DESC
                             """
@@ -146,23 +147,61 @@ class PostgresChatHistoryRepository(ChatHistoryRepository):
 
         return await asyncio.to_thread(_run)
 
+    async def mark_dataset_expired(self, session_id: str) -> None:
+        def _run() -> None:
+            with self._get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE chat.sessions SET dataset_expired_at = now() WHERE id = %s",
+                        (session_id,),
+                    )
+                    conn.commit()
+
+        await asyncio.to_thread(_run)
+
+    async def list_sessions_with_expired_datasets(
+        self, ttl_days: int
+    ) -> list[ChatSession]:
+        def _run() -> list[ChatSession]:
+            with self._get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT id, account_username, upload_session_id, created_at, updated_at, dataset_expired_at
+                        FROM chat.sessions
+                        WHERE upload_session_id IS NOT NULL
+                          AND dataset_expired_at IS NULL
+                          AND updated_at < now() - (%s || ' days')::interval
+                        ORDER BY updated_at
+                        """,
+                        (str(ttl_days),),
+                    )
+                    return [_row_to_session(row) for row in cur.fetchall()]
+
+        return await asyncio.to_thread(_run)
+
 
 def _row_to_session(row: Any) -> ChatSession:
     # RealDictCursor rows are dict-like; fallback to index for plain tuples.
     if hasattr(row, "keys"):
+        raw_expired = row.get("dataset_expired_at")
         return ChatSession(
             id=str(row["id"]),
             account_username=row["account_username"],
             upload_session_id=row["upload_session_id"],
             created_at=_ensure_tz(row["created_at"]),
             updated_at=_ensure_tz(row["updated_at"]),
+            dataset_expired_at=_ensure_tz(raw_expired) if raw_expired else None,
         )
+    # Plain tuple: columns are (id, account_username, upload_session_id, created_at, updated_at, dataset_expired_at)
+    raw_expired = row[5] if len(row) > 5 else None
     return ChatSession(
         id=str(row[0]),
         account_username=row[1],
         upload_session_id=row[2],
         created_at=_ensure_tz(row[3]),
         updated_at=_ensure_tz(row[4]),
+        dataset_expired_at=_ensure_tz(raw_expired) if raw_expired else None,
     )
 
 

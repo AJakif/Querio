@@ -193,6 +193,7 @@ class ChatSession:
     upload_session_id: str | None
     created_at: datetime
     updated_at: datetime
+    dataset_expired_at: datetime | None = None
 
 
 @dataclass

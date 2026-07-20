@@ -62,6 +62,17 @@ async def get_ask_service() -> AskService:
     return app_state.ask_service
 
 
+_DATASET_EXPIRED_PROMPT = (
+    "Your uploaded dataset has expired. "
+    "Please re-upload your file to continue asking questions."
+)
+
+
+def _dataset_expired_response() -> AnswerResponse:
+    """Return the standardized re-upload prompt when a dataset TTL has elapsed."""
+    return AnswerResponse(answer=_DATASET_EXPIRED_PROMPT)
+
+
 def _resolve_session(
     session_id: str | None,
 ) -> tuple[str | None, str, SchemaRepository | None]:
@@ -118,7 +129,20 @@ async def ask(
     if body.chat_session_id:
         history = await chat_history_service.get_history(body.chat_session_id)
         if history:
-            _, turns = history
+            chat_session, turns = history
+            # Dataset TTL expiry guard: if this chat session's dataset has been
+            # cleaned up by the background job and the user is asking a new question
+            # against it, return the re-upload prompt instead of hitting a missing schema.
+            if body.session_id and chat_session.dataset_expired_at is not None:
+                logger.info(
+                    "Ask blocked — dataset TTL elapsed",
+                    extra={
+                        "request_id": request_id,
+                        "chat_session_id": body.chat_session_id,
+                        "dataset_expired_at": chat_session.dataset_expired_at.isoformat(),
+                    },
+                )
+                return _dataset_expired_response()
             if turns:
                 last_spec = turns[-1].answer_json.get("answer_spec") or {}
                 prior_brief = last_spec.get("session_brief", "") or ""
@@ -261,7 +285,27 @@ async def ask_stream(
     if chat_session_id:
         history = await chat_history_service.get_history(chat_session_id)
         if history:
-            _, turns = history
+            chat_session_obj, turns = history
+            # Dataset TTL expiry guard (streaming path)
+            if session_id and chat_session_obj.dataset_expired_at is not None:
+                logger.info(
+                    "Ask/stream blocked — dataset TTL elapsed",
+                    extra={
+                        "request_id": request_id,
+                        "chat_session_id": chat_session_id,
+                        "dataset_expired_at": chat_session_obj.dataset_expired_at.isoformat(),
+                    },
+                )
+                expired_payload = _dataset_expired_response().model_dump(mode="json")
+
+                async def _expired_stream():
+                    yield _sse_event("done", expired_payload)
+
+                return StreamingResponse(
+                    _expired_stream(),
+                    media_type="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                )
             if turns:
                 last_spec = turns[-1].answer_json.get("answer_spec") or {}
                 prior_brief = last_spec.get("session_brief", "") or ""

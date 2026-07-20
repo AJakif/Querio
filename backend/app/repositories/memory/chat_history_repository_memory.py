@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.domain.models import ChatSession, StoredTurn
@@ -70,3 +70,29 @@ class InMemoryChatHistoryRepository(ChatHistoryRepository):
         if account_username is not None:
             sessions = [s for s in sessions if s.account_username == account_username]
         return sessions
+
+    async def mark_dataset_expired(self, session_id: str) -> None:
+        session = self._sessions.get(session_id)
+        if session is None:
+            return
+        now = datetime.now(timezone.utc)
+        self._sessions[session_id] = ChatSession(
+            id=session.id,
+            account_username=session.account_username,
+            upload_session_id=session.upload_session_id,
+            created_at=session.created_at,
+            updated_at=session.updated_at,
+            dataset_expired_at=now,
+        )
+
+    async def list_sessions_with_expired_datasets(
+        self, ttl_days: int
+    ) -> list[ChatSession]:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=ttl_days)
+        return [
+            s
+            for s in self._sessions.values()
+            if s.upload_session_id is not None
+            and s.dataset_expired_at is None
+            and s.updated_at < cutoff
+        ]
