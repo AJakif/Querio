@@ -1,15 +1,24 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { ChatThread } from './components/ChatThread'
 import { ChatSessionHistoryMenu } from './components/ChatSessionHistoryMenu'
+import { ResultsPane } from './components/ResultsPane'
 import { useThinkingStream } from './hooks/useThinkingStream'
 import { EmptyStateEda } from './components/EmptyStateEda'
-import { UploadZone, type UploadState } from './components/UploadZone'
+import { DataBar } from './components/DataBar'
+import type { UploadState } from './components/UploadZone'
 import { teardownSession } from './api/uploadApi'
 import { confirmAssumptions } from './api/askApi'
 import { createChatSession, getChatSession } from './api/chatSessionApi'
-import type { ChatMessage } from './types/api'
+import type { ChatMessage, AnswerResponse } from './types/api'
 
 const CHAT_SESSION_KEY = 'querio_chat_session_id'
+
+function findLastAnswerIndex(messages: ChatMessage[]): number | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.type === 'answer') return i
+  }
+  return null
+}
 
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -17,6 +26,7 @@ export default function App() {
   const [error, setError] = useState<string | undefined>()
   const [uploadState, setUploadState] = useState<UploadState>({ phase: 'idle' })
   const [chatSessionId, setChatSessionId] = useState<string | undefined>()
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const { trace, run: runAsk } = useThinkingStream()
 
   const latestSessionIdRef = useRef<string | undefined>(undefined)
@@ -50,6 +60,7 @@ export default function App() {
             rehydrated.push(turn.answer)
           }
           setMessages(rehydrated)
+          setSelectedIndex(findLastAnswerIndex(rehydrated))
           setChatSessionId(stored)
           return
         } catch {
@@ -109,11 +120,33 @@ export default function App() {
         rehydrated.push(turn.answer)
       }
       setMessages(rehydrated)
+      setSelectedIndex(findLastAnswerIndex(rehydrated))
       setChatSessionId(id)
       localStorage.setItem(CHAT_SESSION_KEY, id)
     } catch {
       // If session vanished between listing and fetching, ignore
     }
+  }, [])
+
+  // ---------------------------------------------------------------------------
+  // New chat — reset the conversation and mint a fresh chat session.
+  // Does not touch the uploaded dataset session; that has its own reset control.
+  // ---------------------------------------------------------------------------
+  const handleNewChat = useCallback(async () => {
+    setMessages([])
+    setSelectedIndex(null)
+    setError(undefined)
+    try {
+      const session = await createChatSession()
+      localStorage.setItem(CHAT_SESSION_KEY, session.chat_session_id)
+      setChatSessionId(session.chat_session_id)
+    } catch {
+      // Non-fatal: chat still works, turns just won't be persisted
+    }
+  }, [])
+
+  const handleSelectMessage = useCallback((index: number) => {
+    setSelectedIndex(index)
   }, [])
 
   // ---------------------------------------------------------------------------
@@ -125,7 +158,11 @@ export default function App() {
     setMessages((prev) => [...prev, { type: 'user', question }])
     try {
       const response = await runAsk(question, undefined, undefined, sessionId, chatSessionId)
-      setMessages((prev) => [...prev, response])
+      setMessages((prev) => {
+        const next = [...prev, response]
+        if (response.type === 'answer') setSelectedIndex(next.length - 1)
+        return next
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unexpected error occurred')
     } finally {
@@ -139,7 +176,11 @@ export default function App() {
     setMessages((prev) => [...prev, { type: 'user', question: option }])
     try {
       const response = await runAsk(option, conversationId, option, sessionId, chatSessionId)
-      setMessages((prev) => [...prev, response])
+      setMessages((prev) => {
+        const next = [...prev, response]
+        if (response.type === 'answer') setSelectedIndex(next.length - 1)
+        return next
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unexpected error occurred')
     } finally {
@@ -155,7 +196,11 @@ export default function App() {
       setError(undefined)
       try {
         const response = await confirmAssumptions(conversationId, amendments)
-        setMessages((prev) => [...prev, response])
+        setMessages((prev) => {
+          const next = [...prev, response]
+          if (response.type === 'answer') setSelectedIndex(next.length - 1)
+          return next
+        })
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An unexpected error occurred')
       } finally {
@@ -165,30 +210,45 @@ export default function App() {
     [],
   )
 
+  const selectedAnswer: AnswerResponse | null =
+    selectedIndex != null && messages[selectedIndex]?.type === 'answer'
+      ? (messages[selectedIndex] as AnswerResponse)
+      : null
+
   return (
     <div className="app">
       <header className="app-header">
+        <button type="button" className="new-chat-btn" onClick={handleNewChat}>
+          + New chat
+        </button>
         <h1>Querio</h1>
         <ChatSessionHistoryMenu onSelectSession={handleSelectSession} />
       </header>
+      <DataBar
+        state={uploadState}
+        onStateChange={setUploadState}
+        currentSessionId={sessionId}
+        onClearSession={handleClearSession}
+        onSuggestionSelect={handleSend}
+      />
       <main className="app-main">
-        <UploadZone
-          state={uploadState}
-          onStateChange={setUploadState}
-          currentSessionId={sessionId}
-          onClearSession={handleClearSession}
-          onSuggestionSelect={handleSend}
-        />
-        {messages.length === 0 && <EmptyStateEda sessionId={sessionId} onSend={handleSend} />}
-        <ChatThread
-          messages={messages}
-          onSend={handleSend}
-          onClarify={handleClarify}
-          onConfirm={handleConfirm}
-          loading={loading}
-          error={error}
-          trace={trace}
-        />
+        <div className="chat-pane">
+          {messages.length === 0 && <EmptyStateEda sessionId={sessionId} onSend={handleSend} />}
+          <ChatThread
+            messages={messages}
+            onSend={handleSend}
+            onClarify={handleClarify}
+            onConfirm={handleConfirm}
+            loading={loading}
+            error={error}
+            trace={trace}
+            selectedIndex={selectedIndex}
+            onSelectMessage={handleSelectMessage}
+          />
+        </div>
+        <div className="results-pane">
+          <ResultsPane message={selectedAnswer} onSend={handleSend} />
+        </div>
       </main>
     </div>
   )

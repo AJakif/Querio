@@ -1,7 +1,5 @@
 import { useState } from 'react'
 import type { ChatMessage, AnswerResponse, ClarifyingQuestionResponse, ClarifyResponse, ConfirmFirstResponse, AssumptionResponse, UserMessage } from '../types/api'
-import { ChartWidget } from './charts/ChartWidget'
-import { AnswerCard } from './AnswerCard'
 import { ClarifyCard } from './ClarifyCard'
 
 interface ChatBubbleProps {
@@ -10,9 +8,11 @@ interface ChatBubbleProps {
   onConfirm?: (conversationId: string, amendments: { term: string; resolution: string }[]) => void
   disabled?: boolean
   onSend?: (question: string) => void
+  isSelected?: boolean
+  onSelect?: () => void
 }
 
-export function ChatBubble({ message, onOptionSelect, onConfirm, disabled, onSend }: ChatBubbleProps) {
+export function ChatBubble({ message, onOptionSelect, onConfirm, disabled, onSend, isSelected, onSelect }: ChatBubbleProps) {
   if (message.type === 'user') {
     return <UserBubble message={message} />
   }
@@ -29,7 +29,7 @@ export function ChatBubble({ message, onOptionSelect, onConfirm, disabled, onSen
     return <ConfirmGateBubble message={message} onConfirm={onConfirm} disabled={disabled} />
   }
 
-  return <AnswerBubble message={message} onSend={onSend} />
+  return <AnswerBubble message={message} isSelected={isSelected} onSelect={onSelect} />
 }
 
 function UserBubble({ message }: { message: UserMessage }) {
@@ -42,45 +42,64 @@ function UserBubble({ message }: { message: UserMessage }) {
   )
 }
 
-function AnswerBubble({ message, onSend }: { message: AnswerResponse; onSend?: (q: string) => void }) {
-  // When a structured AnswerSpec is present, route to the appropriate card view.
-  // Currently only the stat-only route (ROUTE-1) is handled; extend the switch below
-  // when chart-answer and list routes land in later slices.
+// AnswerBubble is a short teaser in the chat thread — the chart, table, SQL,
+// and workbench detail for this turn render in the ResultsPane on selection,
+// not inline here. Click (or Enter/Space) selects this turn.
+function AnswerBubble({
+  message,
+  isSelected,
+  onSelect,
+}: {
+  message: AnswerResponse
+  isSelected?: boolean
+  onSelect?: () => void
+}) {
+  const className = `bubble answer-bubble answer-teaser${isSelected ? ' answer-teaser--selected' : ''}`
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (!onSelect) return
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      onSelect()
+    }
+  }
+
   if (message.answer_spec) {
+    const { headline, restatement } = message.answer_spec
     return (
-      <div data-testid="answer-bubble" className="bubble answer-bubble">
+      <div
+        data-testid="answer-bubble"
+        className={className}
+        onClick={onSelect}
+        onKeyDown={handleKeyDown}
+        role={onSelect ? 'button' : undefined}
+        tabIndex={onSelect ? 0 : undefined}
+      >
         <div className="bubble-content">
-          <AnswerCard
-            spec={message.answer_spec}
-            badge={message.badge_state ?? 'unverified'}
-            onSend={onSend}
-            sql={message.sql}
-            validation={message.validation}
-            traceSteps={message._trace_steps}
-            resultRows={message.result_rows}
-          />
+          <p className="answer-teaser__headline">
+            {headline.value}
+            <span className="answer-teaser__label">{headline.label}</span>
+          </p>
+          <p className="answer-teaser__restatement">{restatement}</p>
+          {onSelect && <span className="answer-teaser__hint">view details &rarr;</span>}
         </div>
       </div>
     )
   }
 
-  // Legacy path: plain text answer (no structured spec)
+  // Legacy path: plain text answer (no structured spec) — any chart/SQL for
+  // this turn shows up in the ResultsPane once selected.
   return (
-    <div data-testid="answer-bubble" className="bubble answer-bubble">
+    <div
+      data-testid="answer-bubble"
+      className={className}
+      onClick={onSelect}
+      onKeyDown={handleKeyDown}
+      role={onSelect ? 'button' : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+    >
       <div className="bubble-content">
         <p>{message.answer}</p>
-        {message.chart && (
-          <div className="chart-container">
-            <ChartWidget chart={message.chart} />
-          </div>
-        )}
-        {message.sql && (
-          <details className="sql-details">
-            <summary>SQL</summary>
-            <pre><code>{message.sql.sql}</code></pre>
-            <p className="sql-explanation">{message.sql.explanation}</p>
-          </details>
-        )}
       </div>
     </div>
   )

@@ -18,28 +18,9 @@ describe('ChatBubble — answer', () => {
     expect(matches.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('renders SQL in an expandable block', () => {
-    render(<ChatBubble message={answerMsg} />)
-    expect(screen.getByText('SELECT 42')).toBeInTheDocument()
-  })
-
-  it('shows SQL explanation', () => {
-    render(<ChatBubble message={answerMsg} />)
-    expect(screen.getByText('test query')).toBeInTheDocument()
-  })
-
-  it('does not render a chart section when chart is null', () => {
-    const { container } = render(<ChatBubble message={answerMsg} />)
-    expect(container.querySelector('.chart-container')).toBeNull()
-  })
-
-  it('renders an answer bubble (not clarifier)', () => {
-    const { container } = render(<ChatBubble message={answerMsg} />)
-    expect(container.querySelector('[data-testid="answer-bubble"]')).toBeInTheDocument()
-    expect(container.querySelector('[data-testid="clarifier-bubble"]')).toBeNull()
-  })
-
-  it('renders chart when chart data is provided', () => {
+  // SQL and chart detail no longer render inline in the chat bubble — they move
+  // to the ResultsPane once this turn is selected (see ResultsPane.test.tsx).
+  it('does not render SQL or chart detail inline', () => {
     const msgWithChart: AnswerResponse = {
       ...answerMsg,
       chart: {
@@ -51,7 +32,26 @@ describe('ChatBubble — answer', () => {
       },
     }
     render(<ChatBubble message={msgWithChart} />)
-    expect(screen.getByText('Orders by Month')).toBeInTheDocument()
+    expect(screen.queryByText('SELECT 42')).toBeNull()
+    expect(screen.queryByText('Orders by Month')).toBeNull()
+  })
+
+  it('renders an answer bubble (not clarifier)', () => {
+    const { container } = render(<ChatBubble message={answerMsg} />)
+    expect(container.querySelector('[data-testid="answer-bubble"]')).toBeInTheDocument()
+    expect(container.querySelector('[data-testid="clarifier-bubble"]')).toBeNull()
+  })
+
+  it('calls onSelect when clicked', () => {
+    const onSelect = vi.fn()
+    render(<ChatBubble message={answerMsg} onSelect={onSelect} />)
+    fireEvent.click(screen.getByTestId('answer-bubble'))
+    expect(onSelect).toHaveBeenCalled()
+  })
+
+  it('applies a selected class when isSelected is true', () => {
+    render(<ChatBubble message={answerMsg} isSelected onSelect={vi.fn()} />)
+    expect(screen.getByTestId('answer-bubble').className).toContain('answer-teaser--selected')
   })
 })
 
