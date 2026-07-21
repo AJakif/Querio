@@ -246,3 +246,35 @@ describe('AnswerCard — workbench drawer', () => {
     expect(screen.getByTestId('badge-row')).toHaveTextContent('Verified by carol')
   })
 })
+
+// ---------------------------------------------------------------------------
+// Chart fallback — column-validation and render-error paths (T8)
+// ---------------------------------------------------------------------------
+
+describe('AnswerCard — chart fallback (T8)', () => {
+  it('renders chart-widget when chart spec columns match result rows (regression)', () => {
+    // resultRows with keys matching chartSpec's x_key and y_key
+    const resultRows = [{ region: 'SP', revenue: 4200000 }]
+    render(<AnswerCard spec={chartAnswerSpec} badge="verified" resultRows={resultRows} />)
+    expect(screen.getByTestId('chart-widget')).toBeInTheDocument()
+    expect(screen.queryByTestId('chart-fallback')).toBeNull()
+  })
+
+  it('renders fallback with quiet note and table when chart spec references a nonexistent column', () => {
+    // resultRows has 'amount' but chart_spec references 'revenue' (y_key mismatch)
+    const badSpec = {
+      ...chartAnswerSpec,
+      chart_spec: { ...chartSpec, y_key: 'nonexistent_column' },
+    }
+    const resultRows = [{ region: 'SP', amount: 4200000 }]
+    render(<AnswerCard spec={badSpec} badge="verified" resultRows={resultRows} />)
+
+    const fallback = screen.getByTestId('chart-fallback')
+    expect(fallback).toBeInTheDocument()
+    expect(fallback).toHaveTextContent("couldn't draw this chart — here's the data as a table.")
+    // Underlying data rendered as table rows
+    expect(fallback.querySelector('table')).toBeInTheDocument()
+    // ChartWidget must never have been rendered
+    expect(screen.queryByTestId('chart-widget')).toBeNull()
+  })
+})
