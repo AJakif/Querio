@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import type { ChatMessage } from '../types/api'
 import { ChatBubble } from './ChatBubble'
 import { ThinkingTrace } from './ThinkingTrace'
+import { PipelineStatus } from './PipelineStatus'
 import type { TraceState } from '../hooks/useThinkingStream'
 
 interface ChatThreadProps {
@@ -62,7 +63,12 @@ export function ChatThread({ messages, onSend, onClarify, onConfirm, loading, er
             onSend={onSend}
           />
         ))}
-        {loading && trace && <ThinkingTrace steps={trace.steps} />}
+        {loading && trace && (
+          <>
+            <PipelineStatus steps={trace.steps} />
+            <ThinkingTrace steps={trace.steps} />
+          </>
+        )}
         {loading && !trace && <div className="loading-indicator">Thinking...</div>}
         {error && <div className="error-message">{error}</div>}
         <div ref={endRef} />
