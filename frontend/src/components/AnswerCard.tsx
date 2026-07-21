@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import type { AnswerSpec, BadgeState, Assumption, Headline, ValidationResultResponse, TraceStep } from '../types/api'
 import { ChartWidget } from './charts/ChartWidget'
 import { useProvenanceSetting } from '../hooks/useProvenanceSetting'
+import { useWorkbenchOpenSetting } from '../hooks/useWorkbenchOpenSetting'
 import { buildProvenance, exportCSV, exportSVG, exportPNG } from '../utils/chartExport'
 import { CitedSummary } from './CitedSummary'
 
@@ -305,7 +306,7 @@ function WorkbenchToggle({
   validation?: ValidationResultResponse | null
   suppressionReason?: string | null
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useWorkbenchOpenSetting()
 
   return (
     <div className="answer-card__workbench">
@@ -313,10 +314,10 @@ function WorkbenchToggle({
         type="button"
         data-testid="workbench-toggle"
         className="workbench-toggle"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(!open)}
         aria-expanded={open}
       >
-        <span className="workbench-toggle__label">show the work</span>
+        <span className="workbench-toggle__label">how i got this</span>
         <span className="workbench-toggle__caret" aria-hidden="true">{open ? '▲' : '▼'}</span>
       </button>
       {open && (

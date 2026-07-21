@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AnswerCard } from './AnswerCard'
@@ -139,6 +139,10 @@ describe('AnswerCard — stat-only route', () => {
 })
 
 describe('AnswerCard — workbench drawer', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
   const validation: ValidationResultResponse = {
     dependency_set: [{ table: 'fct_orders', column: 'payment_value' }],
     fingerprints: [
