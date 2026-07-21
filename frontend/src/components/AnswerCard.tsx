@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react'
 import type { AnswerSpec, BadgeState, Assumption, Headline, ValidationResultResponse, TraceStep } from '../types/api'
 import { ChartWidget } from './charts/ChartWidget'
+import { ChartErrorBoundary } from './charts/ChartErrorBoundary'
 import { useProvenanceSetting } from '../hooks/useProvenanceSetting'
 import { useWorkbenchOpenSetting } from '../hooks/useWorkbenchOpenSetting'
 import { buildProvenance, exportCSV, exportSVG, exportPNG } from '../utils/chartExport'
 import { CitedSummary } from './CitedSummary'
+import { validateChartColumns } from '../utils/chartValidator'
 
 interface AnswerCardProps {
   spec: AnswerSpec
@@ -333,6 +335,49 @@ function WorkbenchToggle({
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// ChartFallback — shown when column validation fails or ChartWidget throws
+// ---------------------------------------------------------------------------
+
+interface ChartFallbackProps {
+  data: Record<string, unknown>[]
+}
+
+export function ChartFallback({ data }: ChartFallbackProps) {
+  const firstRow = data[0]
+  const columns = firstRow !== undefined ? Object.keys(firstRow) : []
+  return (
+    <div data-testid="chart-fallback" className="chart-fallback">
+      <p className="chart-fallback__note">
+        couldn&apos;t draw this chart — here&apos;s the data as a table.
+      </p>
+      {columns.length > 0 && (
+        <div className="chart-fallback__table-wrap">
+          <table className="chart-fallback__table">
+            <thead>
+              <tr>
+                {columns.map((col) => (
+                  <th key={col}>{col}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((row, i) => (
+                <tr key={i}>
+                  {columns.map((col) => (
+                    <td key={col}>{String(row[col] ?? '')}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // AnswerCard — routes on response_type
 //   ROUTE-1 'stat'  → badge → assumption → headline (no chart)
 //   ROUTE-2 'chart' → badge → assumption → headline → chart → restatement
@@ -352,6 +397,18 @@ export function AnswerCard({ spec, badge, verifierName, onSend, sql, validation,
   // Ref on the chart wrapper div — used by ExportButtons to locate the SVG for PNG/SVG export.
   const chartContainerRef = useRef<HTMLDivElement | null>(null)
 
+  // Fallback data: prefer actual query result rows; fall back to chart spec's own data array.
+  const fallbackData = resultRows ?? spec.chart_spec?.data ?? []
+
+  // Column validation: derive result columns from the first resultRow's keys.
+  // Empty array when resultRows is absent — validateChartColumns skips validation in that case.
+  const firstResultRow = resultRows?.[0]
+  const resultColumns = firstResultRow !== undefined ? Object.keys(firstResultRow) : []
+  const chartColumnsValid =
+    spec.chart_spec == null || validateChartColumns(spec.chart_spec, resultColumns)
+
+  const chartFallback = <ChartFallback data={fallbackData} />
+
   return (
     <div data-testid="answer-card" className="answer-card">
       {/* Fixed order: badge → assumption → headline (normative per Blueprint) */}
@@ -360,7 +417,13 @@ export function AnswerCard({ spec, badge, verifierName, onSend, sql, validation,
       <HeadlineStat headline={spec.headline} />
       {responseType === 'chart' && spec.chart_spec && (
         <div ref={chartContainerRef}>
-          <ChartWidget chart={spec.chart_spec} citationTarget={citationTarget} />
+          {chartColumnsValid ? (
+            <ChartErrorBoundary fallback={chartFallback}>
+              <ChartWidget chart={spec.chart_spec} citationTarget={citationTarget} />
+            </ChartErrorBoundary>
+          ) : (
+            chartFallback
+          )}
         </div>
       )}
       {/* Cited summary (slice 9): claims with tappable markers + source panel.
