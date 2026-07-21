@@ -46,10 +46,14 @@ class _OkHandler(http.server.BaseHTTPRequestHandler):
         pass
 
 
-def _run_setup(output_dir: Path, probe_url: str) -> subprocess.CompletedProcess[str]:
+def _run_setup(
+    output_dir: Path,
+    probe_url: str,
+    extra_args: list[str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     assert BASH is not None
     return subprocess.run(
-        [BASH, str(SETUP_SCRIPT)],
+        [BASH, str(SETUP_SCRIPT), *(extra_args or [])],
         cwd=REPO_ROOT,
         env={
             **__import__("os").environ,
@@ -61,6 +65,12 @@ def _run_setup(output_dir: Path, probe_url: str) -> subprocess.CompletedProcess[
         timeout=30,
         check=True,
     )
+
+
+# Production defaults for the three context knobs (mirrors .env.example).
+_PROD_MAX_RESULT_ROWS = 1000
+_PROD_MAX_LLM_ROWS = 50
+_PROD_SESSION_BRIEF_MAX_TOKENS = 300
 
 
 @pytest.fixture
@@ -94,3 +104,30 @@ def test_setup_falls_back_when_ollama_absent(tmp_path: Path) -> None:
     env_contents = (tmp_path / ".env").read_text(encoding="utf-8")
     assert "MODEL_PROVIDER=openai" in env_contents
     assert (tmp_path / ".env.secrets").exists()
+
+
+def test_small_model_flag_writes_conservative_values(tmp_path: Path) -> None:
+    """--small-model must set all three context knobs to values below production defaults."""
+    _run_setup(tmp_path, "http://127.0.0.1:1", extra_args=["--small-model"])
+
+    env_contents = (tmp_path / ".env").read_text(encoding="utf-8")
+
+    def _get_int_value(key: str) -> int:
+        for line in env_contents.splitlines():
+            if line.startswith(f"{key}="):
+                return int(line.split("=", 1)[1])
+        raise AssertionError(f"{key} not found in .env")
+
+    assert _get_int_value("MAX_RESULT_ROWS") < _PROD_MAX_RESULT_ROWS
+    assert _get_int_value("MAX_LLM_ROWS") < _PROD_MAX_LLM_ROWS
+    assert _get_int_value("SESSION_BRIEF_MAX_TOKENS") < _PROD_SESSION_BRIEF_MAX_TOKENS
+
+
+def test_default_setup_does_not_override_context_knob_defaults(tmp_path: Path) -> None:
+    """Without --small-model the three knobs must keep their production defaults."""
+    _run_setup(tmp_path, "http://127.0.0.1:1")
+
+    env_contents = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert f"MAX_RESULT_ROWS={_PROD_MAX_RESULT_ROWS}" in env_contents
+    assert f"MAX_LLM_ROWS={_PROD_MAX_LLM_ROWS}" in env_contents
+    assert f"SESSION_BRIEF_MAX_TOKENS={_PROD_SESSION_BRIEF_MAX_TOKENS}" in env_contents

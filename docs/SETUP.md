@@ -106,6 +106,28 @@ The default Docker setup mounts `./.env.secrets` read-only into the container an
 
 If hosted provider API keys are blank, Querio falls back to its built-in fake SQL generator so the local stack can still boot for wiring checks. Real natural-language SQL generation requires a valid hosted provider API key or a reachable local Ollama server.
 
+### Context knobs
+
+Three env vars control how much data flows through the pipeline. Set them in `.env`.
+
+| Env var | Default | Controls |
+|---|---|---|
+| `MAX_RESULT_ROWS` | `1000` | Hard cap on rows the SQL guardrail allows the database to return. Queries that would exceed this are rejected before execution. |
+| `MAX_LLM_ROWS` | `50` | Rows actually serialized into any LLM prompt. Enforced by `agent/prompt_gate.py` — the sole legal path for row data entering a prompt. |
+| `SESSION_BRIEF_MAX_TOKENS` | `300` | Max tokens for the rolling session brief injected into Aggregator prompts. |
+
+On models with small context windows (≤4B parameters, `OLLAMA_NUM_CTX=8192`), Querio may be slow but must never fail with a context-overflow error. If you see truncation or silent degradation, lower these values. The `--small-model` / `-SmallModel` flag in the setup scripts applies a pre-tuned conservative profile in one step:
+
+```bash
+# Bash / Linux / macOS
+./scripts/setup.sh --small-model
+
+# PowerShell / Windows
+.\scripts\setup.ps1 -SmallModel
+```
+
+This sets `MAX_RESULT_ROWS=200`, `MAX_LLM_ROWS=20`, and `SESSION_BRIEF_MAX_TOKENS=150` in your `.env`. The flag can be combined with `--force` / `-Force` to regenerate `.env` from scratch at the same time.
+
 ### Running with Ollama
 
 Querio's agent pipeline chains several structured-output calls per question (ambiguity scoring, SQL generation, cost/fingerprint validation, AnswerSpec assembly with typed chart specs and citations), so the local model needs reliable function-calling / structured-output support, not just general chat quality — this is where small local models tend to fall apart first.
