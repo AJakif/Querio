@@ -51,6 +51,7 @@ def _build_model(
     anthropic_api_key: str | None,
     ollama_base_url: str | None = None,
     ollama_num_ctx: int | None = None,
+    ollama_request_timeout: float | None = None,
 ):
     logger.debug("Building model adapter", extra={"model_name": model_name})
     provider_name, separator, provider_model = model_name.partition(":")
@@ -79,7 +80,8 @@ def _build_model(
             provider_model,
             provider=OpenAIProvider(base_url=ollama_base_url, api_key="ollama"),
             settings=OpenAIChatModelSettings(
-                extra_body={"options": {"num_ctx": ollama_num_ctx or 8192}}
+                extra_body={"options": {"num_ctx": ollama_num_ctx or 8192}},
+                timeout=ollama_request_timeout or 120.0,
             ),
         )
 
@@ -108,11 +110,17 @@ class PydanticAiSqlGenerator(SqlGenerator):
         anthropic_api_key: str | None = None,
         ollama_base_url: str | None = None,
         ollama_num_ctx: int | None = None,
+        ollama_request_timeout: float | None = None,
     ):
         logger.info(
             "Initializing Pydantic AI SQL generator", extra={"model_name": model_name}
         )
         self._system_prompt = build_static_prefix() + "\n\n" + SQL_GEN_INSTRUCTIONS
+        # Local models are less reliable at producing valid structured output on the
+        # first attempt than hosted models — give them more retry budget. Verified via
+        # direct testing: qwen2.5:7b needs this to recover from occasional malformed
+        # tool-call output; hosted providers rarely need more than the default of 1.
+        is_ollama = model_name.startswith("ollama:")
         self._agent = PydanticAgent(
             _build_model(
                 model_name,
@@ -120,10 +128,12 @@ class PydanticAiSqlGenerator(SqlGenerator):
                 anthropic_api_key,
                 ollama_base_url,
                 ollama_num_ctx,
+                ollama_request_timeout,
             ),
             system_prompt=self._system_prompt,
             output_type=GeneratedSQL,
             deps_type=SchemaRepository,
+            retries=3 if is_ollama else 1,
         )
         self._agent.tool(get_schema)
         self._schema_repo = schema_repo

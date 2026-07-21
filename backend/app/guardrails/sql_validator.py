@@ -2,7 +2,7 @@ import re
 
 import sqlglot
 from sqlglot import exp
-from sqlglot.errors import ParseError, SqlglotError
+from sqlglot.errors import SqlglotError
 
 from app.core.logging import get_logger
 
@@ -18,44 +18,45 @@ FORBIDDEN_KEYWORDS = [
 ERROR_EMPTY = "I couldn't understand that request. Please try rephrasing."
 ERROR_NON_SELECT = "I can only look up data for you. Write operations aren't supported."
 ERROR_FORBIDDEN_KEYWORD = "Your request would require making changes to the database, which I can't do."
+ERROR_MULTI_STATEMENT = "I can only run a single read-only query at a time."
+
+# A query is read-only if its top-level AST node is one of these — this also
+# covers `WITH ... SELECT` (sqlglot attaches the CTE to the Select node's
+# `with` arg rather than producing a separate top-level node) and `UNION`.
+READ_ONLY_NODE_TYPES = (exp.Select, exp.Union)
 
 
-def _apply_limit_cap(sql: str, max_rows: int) -> str:
-    """Enforce max_rows on the outermost query LIMIT via AST rewrite.
-
-    Falls back to string-append when sqlglot cannot parse the SQL, so
-    unparseable queries never bypass the row cap.
-    """
+def _parse_single_statement(sql: str) -> exp.Expression | None:
+    """Parse sql into exactly one statement. Returns None if unparseable, empty, or multiple."""
     try:
         statements = sqlglot.parse(sql, dialect="postgres", error_level=sqlglot.ErrorLevel.RAISE)
-        if not statements or statements[0] is None:
-            raise ParseError("empty parse result")
-
-        stmt = statements[0]
-        limit_node: exp.Expression | None = stmt.args.get("limit")
-
-        if limit_node is None:
-            stmt.set("limit", exp.Limit(expression=exp.Literal.number(max_rows)))
-            logger.debug("Added SQL limit guardrail via AST", extra={"max_rows": max_rows})
-        else:
-            limit_expr: exp.Expression | None = limit_node.args.get("expression")
-            if isinstance(limit_expr, exp.Literal) and limit_expr.is_number:
-                current_limit = int(limit_expr.this)
-                if current_limit > max_rows:
-                    limit_node.set("expression", exp.Literal.number(max_rows))
-                    logger.debug(
-                        "Capped SQL limit guardrail via AST",
-                        extra={"original_limit": current_limit, "max_rows": max_rows},
-                    )
-
-        return stmt.sql(dialect="postgres")
-
     except SqlglotError:
-        # Fallback for unparseable SQL: string-based cap so row limit is never bypassed.
-        if "LIMIT" not in sql.upper():
-            logger.debug("Added SQL limit guardrail via string fallback", extra={"max_rows": max_rows})
-            return sql.rstrip(";") + f" LIMIT {max_rows}"
-        return sql
+        return None
+    statements = [s for s in statements if s is not None]
+    if len(statements) != 1:
+        return None
+    return statements[0]
+
+
+def _apply_limit_cap(stmt: exp.Expression, max_rows: int) -> str:
+    """Enforce max_rows on the outermost query LIMIT via AST rewrite."""
+    limit_node: exp.Expression | None = stmt.args.get("limit")
+
+    if limit_node is None:
+        stmt.set("limit", exp.Limit(expression=exp.Literal.number(max_rows)))
+        logger.debug("Added SQL limit guardrail via AST", extra={"max_rows": max_rows})
+    else:
+        limit_expr: exp.Expression | None = limit_node.args.get("expression")
+        if isinstance(limit_expr, exp.Literal) and limit_expr.is_number:
+            current_limit = int(limit_expr.this)
+            if current_limit > max_rows:
+                limit_node.set("expression", exp.Literal.number(max_rows))
+                logger.debug(
+                    "Capped SQL limit guardrail via AST",
+                    extra={"original_limit": current_limit, "max_rows": max_rows},
+                )
+
+    return stmt.sql(dialect="postgres")
 
 
 def validate_sql(sql: str, max_rows: int = 1000) -> tuple[str | None, str | None]:
@@ -64,12 +65,27 @@ def validate_sql(sql: str, max_rows: int = 1000) -> tuple[str | None, str | None
         logger.warning("SQL validation failed: empty query")
         return None, ERROR_EMPTY
 
-    upper = stripped.upper().strip().rstrip(";")
+    stmt = _parse_single_statement(stripped.rstrip(";"))
 
-    if not upper.startswith("SELECT"):
-        logger.warning("SQL validation failed: non-select query", extra={"sql_preview": stripped[:120]})
+    if stmt is None:
+        # Unparseable by sqlglot, or more than one statement — fall back to a
+        # conservative string check so we never silently accept something we
+        # can't reason about via the AST.
+        upper = stripped.upper().strip().rstrip(";")
+        if ";" in stripped.rstrip(";"):
+            logger.warning("SQL validation failed: multiple statements", extra={"sql_preview": stripped[:120]})
+            return None, ERROR_MULTI_STATEMENT
+        if not upper.startswith("SELECT"):
+            logger.warning("SQL validation failed: non-select query", extra={"sql_preview": stripped[:120]})
+            return None, ERROR_NON_SELECT
+    elif not isinstance(stmt, READ_ONLY_NODE_TYPES):
+        logger.warning(
+            "SQL validation failed: non-select query",
+            extra={"sql_preview": stripped[:120], "node_type": type(stmt).__name__},
+        )
         return None, ERROR_NON_SELECT
 
+    upper = stripped.upper()
     no_strings = re.sub(r"'[^']*'", "", upper)
 
     for keyword in FORBIDDEN_KEYWORDS:
@@ -80,7 +96,13 @@ def validate_sql(sql: str, max_rows: int = 1000) -> tuple[str | None, str | None
             )
             return None, ERROR_FORBIDDEN_KEYWORD
 
-    rewritten = _apply_limit_cap(stripped, max_rows)
+    if stmt is not None:
+        rewritten = _apply_limit_cap(stmt, max_rows)
+    else:
+        rewritten = stripped
+        if "LIMIT" not in stripped.upper():
+            logger.debug("Added SQL limit guardrail via string fallback", extra={"max_rows": max_rows})
+            rewritten = stripped.rstrip(";") + f" LIMIT {max_rows}"
 
     logger.debug("SQL validation passed", extra={"sql_preview": rewritten[:120]})
     return rewritten, None

@@ -101,6 +101,13 @@ class FakePlannerModelError(FakePlanner):
         raise RuntimeError("Exceeded maximum output retries (1)")
 
 
+class FakeSqlGeneratorSchemaUnavailable(FakeSqlGenerator):
+    """Simulates asking against a session whose schema was torn down."""
+    async def generate(self, question: str, **kwargs) -> GeneratedSQL:
+        from app.domain.exceptions import SchemaUnavailableError
+        raise SchemaUnavailableError("No tables were found in the configured database schema.")
+
+
 class FakeSqlGeneratorRepairing(FakeSqlGenerator):
     def __init__(self):
         self.calls: list[str] = []
@@ -190,6 +197,21 @@ class TestAskService:
         result = await service.answer("How many orders?")
         assert isinstance(result, Answer)
         assert "unavailable" in result.text.lower()
+
+    @pytest.mark.asyncio
+    async def test_answer_reports_session_expired_not_provider_unavailable(self, schema_repo, query_repo):
+        """A torn-down session schema must not be reported as 'AI model unavailable' —
+        that message wrongly implies the LLM provider itself is down."""
+        from app.services.ask_service import AskService
+        service = AskService(
+            sql_generator=FakeSqlGeneratorSchemaUnavailable(),
+            schema_repository=schema_repo,
+            query_repository=query_repo,
+        )
+        result = await service.answer("How many orders?")
+        assert isinstance(result, Answer)
+        assert "unavailable" not in result.text.lower()
+        assert "expired" in result.text.lower() or "re-upload" in result.text.lower()
 
     @pytest.mark.asyncio
     async def test_answer_returns_answer_with_text(self, service):

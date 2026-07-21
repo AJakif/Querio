@@ -20,6 +20,7 @@ from app.domain.models import (
 )
 from app.repositories.base import SchemaRepository, QueryRepository
 from app.agent.agent import SqlGenerator, GeneratedSQL
+from app.domain.exceptions import SchemaUnavailableError
 from app.guardrails.sql_validator import validate_sql
 from app.services.conversation_store import ConversationStore
 from app.services.confirm_store import ConfirmStore, ConfirmPendingState
@@ -36,6 +37,9 @@ logger = get_logger("ask_service")
 # observation hook for the transport layer (e.g. SSE progress streaming) — AskService
 # stays transport-agnostic and never imports anything HTTP/SSE related.
 OnStep = Callable[[str, dict[str, Any]], Awaitable[None]]
+
+ERROR_MODEL_UNAVAILABLE = "Sorry, the AI model is currently unavailable. Please check that your model provider is running and try again."
+ERROR_SESSION_EXPIRED = "This dataset session has expired or was removed. Please re-upload your file to continue."
 
 
 async def _emit(on_step: "OnStep | None", stage: str, detail: dict[str, Any]) -> None:
@@ -149,6 +153,12 @@ class AskService:
             plan_result = await self._planner.plan(
                 question, schema_repo_override=schema_repo, session_brief=session_brief
             )
+        except SchemaUnavailableError as exc:
+            logger.warning(
+                "Planner failed — schema unavailable (session likely expired)",
+                extra={"request_id": request_id, "error": str(exc)},
+            )
+            return Answer(text=ERROR_SESSION_EXPIRED, conversation_id=conversation_id)
         except Exception as exc:
             logger.warning(
                 "Planner failed — provider unreachable or invalid output",
@@ -159,7 +169,7 @@ class AskService:
                 },
             )
             return Answer(
-                text="Sorry, the AI model is currently unavailable. Please check that your model provider is running and try again.",
+                text=ERROR_MODEL_UNAVAILABLE,
                 conversation_id=conversation_id,
             )
         logger.debug(
@@ -267,6 +277,12 @@ class AskService:
             generated = await self._sql_generator.generate(
                 question, schema_repo_override=schema_repo, session_brief=session_brief
             )
+        except SchemaUnavailableError as exc:
+            logger.warning(
+                "SQL generator failed — schema unavailable (session likely expired)",
+                extra={"request_id": request_id, "error": str(exc)},
+            )
+            return Answer(text=ERROR_SESSION_EXPIRED, conversation_id=conversation_id)
         except Exception as exc:
             logger.warning(
                 "SQL generator failed — provider unreachable",
@@ -277,7 +293,7 @@ class AskService:
                 },
             )
             return Answer(
-                text="Sorry, the AI model is currently unavailable. Please check that your model provider is running and try again.",
+                text=ERROR_MODEL_UNAVAILABLE,
                 conversation_id=conversation_id,
             )
 
@@ -517,6 +533,16 @@ class AskService:
                         _build_repair_prompt(question, generated.sql, exc),
                         schema_repo_override=schema_repo,
                     )
+                except SchemaUnavailableError as repair_exc:
+                    logger.warning(
+                        "SQL generator failed during repair — schema unavailable (session likely expired)",
+                        extra={"request_id": request_id, "error": str(repair_exc)},
+                    )
+                    return Answer(
+                        text=ERROR_SESSION_EXPIRED,
+                        conversation_id=conversation_id,
+                        plan=plan_result,
+                    )
                 except Exception as repair_exc:
                     logger.warning(
                         "SQL generator failed during repair — provider unreachable",
@@ -527,7 +553,7 @@ class AskService:
                         },
                     )
                     return Answer(
-                        text="Sorry, the AI model is currently unavailable. Please check that your model provider is running and try again.",
+                        text=ERROR_MODEL_UNAVAILABLE,
                         conversation_id=conversation_id,
                         plan=plan_result,
                     )
@@ -699,6 +725,12 @@ class AskService:
             generated = await self._sql_generator.generate(
                 question, schema_repo_override=schema_repo, session_brief=session_brief
             )
+        except SchemaUnavailableError as exc:
+            logger.warning(
+                "SQL generator failed — schema unavailable (session likely expired)",
+                extra={"request_id": request_id, "error": str(exc)},
+            )
+            return Answer(text=ERROR_SESSION_EXPIRED, conversation_id=conversation_id)
         except Exception as exc:
             logger.warning(
                 "SQL generator failed — provider unreachable",
@@ -709,7 +741,7 @@ class AskService:
                 },
             )
             return Answer(
-                text="Sorry, the AI model is currently unavailable. Please check that your model provider is running and try again.",
+                text=ERROR_MODEL_UNAVAILABLE,
                 conversation_id=conversation_id,
             )
         if not generated.requires_clarification:

@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 from numbers import Number
 
 from pydantic_ai import Agent as PydanticAgent
+from pydantic_ai.output import NativeOutput
 
 from app.agent.agent import _build_model
 from app.agent.contracts import AnswerSpec, Claim, ChartSpecModel, Headline, PlanResult
@@ -43,11 +44,21 @@ class PydanticAiAggregator(Aggregator):
         anthropic_api_key: str | None = None,
         ollama_base_url: str | None = None,
         ollama_num_ctx: int | None = None,
+        ollama_request_timeout: float | None = None,
     ):
         logger.info(
             "Initializing Pydantic AI aggregator", extra={"model_name": model_name}
         )
         self._system_prompt = build_static_prefix() + "\n\n" + AGGREGATOR_INSTRUCTIONS
+        # The aggregator has no tools to call — it only produces a final structured
+        # result — so local models can use the provider's native JSON-schema-constrained
+        # decoding instead of function/tool-calling. Verified via direct testing: on
+        # qwen2.5:7b, tool-call mode fails 100% of the time (model returns prose instead
+        # of a valid tool call against the AnswerSpec schema); NativeOutput mode
+        # succeeded 3/3 runs at default retries. Hosted providers keep tool-call mode,
+        # which is already reliable there.
+        is_ollama = model_name.startswith("ollama:")
+        output_type = NativeOutput(AnswerSpec) if is_ollama else AnswerSpec
         self._agent = PydanticAgent(
             _build_model(
                 model_name,
@@ -55,9 +66,11 @@ class PydanticAiAggregator(Aggregator):
                 anthropic_api_key,
                 ollama_base_url,
                 ollama_num_ctx,
+                ollama_request_timeout,
             ),
             system_prompt=self._system_prompt,
-            output_type=AnswerSpec,
+            output_type=output_type,
+            retries=3 if is_ollama else 1,
         )
 
     async def aggregate(
