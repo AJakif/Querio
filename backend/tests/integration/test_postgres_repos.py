@@ -86,3 +86,13 @@ class TestPostgresQueryRepository:
         rows = await repo.execute("SELECT 1 AS val")
         assert len(rows) == 1
         assert rows[0]["val"] == 1
+
+    @pytest.mark.asyncio
+    async def test_execute_normalizes_numeric_column_to_float(self):
+        """SUM()/numeric columns come back from psycopg2 as Decimal, which Pydantic
+        serializes as a JSON string inside dict[str, Any] fields — breaking Recharts'
+        numeric axis scale for chart_spec.data downstream. Must be a real float here."""
+        from app.repositories.postgres.query_repository_pg import PostgresQueryRepository
+        repo = PostgresQueryRepository()
+        rows = await repo.execute("SELECT SUM(x) AS total FROM (VALUES (1::numeric), (2::numeric)) AS t(x)")
+        assert isinstance(rows[0]["total"], float)
