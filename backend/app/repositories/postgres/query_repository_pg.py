@@ -1,4 +1,6 @@
 import asyncio
+from decimal import Decimal
+
 from psycopg2.extras import RealDictCursor
 
 from app.core.logging import get_logger
@@ -6,6 +8,16 @@ from app.core.config import settings
 from app.repositories.base import QueryRepository
 
 logger = get_logger("repositories.postgres.query")
+
+
+def _normalize_value(value: object) -> object:
+    # psycopg2 returns numeric/decimal columns (e.g. SUM() results) as Decimal.
+    # Pydantic serializes Decimal inside dict[str, Any] fields as a JSON string,
+    # not a number — which breaks Recharts' numeric axis scale downstream. Cast
+    # to float at the repository boundary so every consumer sees a real number.
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
 
 
 class PostgresQueryRepository(QueryRepository):
@@ -33,7 +45,10 @@ class PostgresQueryRepository(QueryRepository):
                     cur.execute("SET LOCAL statement_timeout = %s", (settings.query_timeout_ms,))
                     logger.debug("Executing Postgres query", extra={"sql": sql})
                     cur.execute(sql)
-                    rows = [dict(row) for row in cur.fetchall()]
+                    rows = [
+                        {key: _normalize_value(value) for key, value in row.items()}
+                        for row in cur.fetchall()
+                    ]
                     logger.info("Postgres query completed", extra={"row_count": len(rows)})
                     return rows
         return await asyncio.to_thread(_run)

@@ -13,9 +13,11 @@ interface ChatThreadProps {
   loading?: boolean
   error?: string
   trace?: TraceState | null
+  selectedIndex?: number | null
+  onSelectMessage?: (index: number) => void
 }
 
-export function ChatThread({ messages, onSend, onClarify, onConfirm, loading, error, trace }: ChatThreadProps) {
+export function ChatThread({ messages, onSend, onClarify, onConfirm, loading, error, trace, selectedIndex, onSelectMessage }: ChatThreadProps) {
   const [input, setInput] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
@@ -61,6 +63,8 @@ export function ChatThread({ messages, onSend, onClarify, onConfirm, loading, er
               (msg.type === 'confirm_first' && i !== lastConfirmIdx)
             }
             onSend={onSend}
+            isSelected={i === selectedIndex}
+            onSelect={msg.type === 'answer' ? () => onSelectMessage?.(i) : undefined}
           />
         ))}
         {loading && trace && (
