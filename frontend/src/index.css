@@ -448,6 +448,48 @@ body {
   padding: 8px 0;
 }
 
+@keyframes pipeline-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+}
+
+.pipeline-status {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  padding: 8px 0;
+}
+
+.pipeline-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #F4D35E;
+  flex-shrink: 0;
+  animation: pipeline-pulse 1.4s ease-in-out infinite;
+}
+
+.pipeline-status-text {
+  color: var(--color-text-secondary);
+  font-style: italic;
+  font-size: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pipeline-status-dot {
+    animation: none;
+  }
+}
+
 .error-message {
   align-self: center;
   color: var(--color-error);

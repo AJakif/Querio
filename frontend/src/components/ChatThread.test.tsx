@@ -91,6 +91,13 @@ describe('ChatThread', () => {
     expect(screen.getByText(/thinking/i)).toBeInTheDocument()
   })
 
+  it('shows PipelineStatus (pulsing dot) when loading and trace are both present', () => {
+    const trace = { steps: [{ type: 'step' as const, stage: 'planner', detail: {} }] }
+    render(<ChatThread messages={[]} onSend={vi.fn()} loading={true} trace={trace} />)
+    expect(screen.getByTestId('pipeline-status')).toBeInTheDocument()
+    expect(document.querySelector('.pipeline-status-dot')).toBeInTheDocument()
+  })
+
   it('shows error message when error is provided', () => {
     render(<ChatThread messages={[]} onSend={vi.fn()} error="Something went wrong" />)
     expect(screen.getByText('Something went wrong')).toBeInTheDocument()
