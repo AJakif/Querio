@@ -89,3 +89,18 @@ class TestValidateSql:
         assert "keyword" not in error.lower()
         assert "SQL" not in error.upper()
         assert len(error) > 10
+
+    def test_cte_select_passes(self):
+        sql, error = validate_sql(
+            "WITH totals AS (SELECT customer_id, SUM(amount) AS total FROM orders GROUP BY customer_id) "
+            "SELECT * FROM totals",
+            max_rows=100,
+        )
+        assert error is None
+        assert sql is not None
+        assert "LIMIT 100" in sql
+
+    def test_multi_statement_is_rejected(self):
+        sql, error = validate_sql("SELECT * FROM orders; SELECT * FROM customers")
+        assert error is not None
+        assert sql is None

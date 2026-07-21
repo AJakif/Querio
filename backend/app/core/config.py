@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3.1"
     ollama_base_url: str = "http://localhost:11434/v1"
     ollama_num_ctx: int = 8192
+    ollama_request_timeout_seconds: float = 120.0
     openai_api_key: SecretStr | None = Field(default=None, repr=False)
     openai_api_key_file: str | None = None
     anthropic_api_key: SecretStr | None = Field(default=None, repr=False)

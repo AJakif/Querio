@@ -2,6 +2,8 @@ export interface AskRequest {
   question: string
   conversation_id?: string
   clarification_answer?: string
+  session_id?: string
+  chat_session_id?: string
 }
 
 export interface AssumptionResponse {

@@ -33,11 +33,13 @@ class PydanticAiPlanner(Planner):
         anthropic_api_key: str | None = None,
         ollama_base_url: str | None = None,
         ollama_num_ctx: int | None = None,
+        ollama_request_timeout: float | None = None,
     ):
         logger.info(
             "Initializing Pydantic AI planner", extra={"model_name": model_name}
         )
         self._system_prompt = build_static_prefix() + "\n\n" + PLANNER_INSTRUCTIONS
+        is_ollama = model_name.startswith("ollama:")
         self._agent = PydanticAgent(
             _build_model(
                 model_name,
@@ -45,10 +47,12 @@ class PydanticAiPlanner(Planner):
                 anthropic_api_key,
                 ollama_base_url,
                 ollama_num_ctx,
+                ollama_request_timeout,
             ),
             system_prompt=self._system_prompt,
             output_type=PlanResult,
             deps_type=SchemaRepository,
+            retries=3 if is_ollama else 1,
         )
         self._agent.tool(get_schema)
         self._schema_repo = schema_repo

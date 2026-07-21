@@ -1,6 +1,7 @@
 from pydantic_ai import RunContext
 
 from app.core.logging import get_logger
+from app.domain.exceptions import SchemaUnavailableError
 from app.repositories.base import SchemaRepository
 
 
@@ -11,7 +12,7 @@ async def format_schema(repo: SchemaRepository) -> str:
     tables = await repo.get_tables()
     if not tables:
         logger.error("Schema tool found no tables")
-        raise RuntimeError("No tables were found in the configured database schema.")
+        raise SchemaUnavailableError("No tables were found in the configured database schema.")
     logger.debug("Formatting schema for agent", extra={"table_count": len(tables)})
     parts = []
     for table in tables:

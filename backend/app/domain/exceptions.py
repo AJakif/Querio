@@ -34,3 +34,7 @@ class InvalidCredentialsError(Exception):
 
 class ChatSessionNotFoundError(Exception):
     pass
+
+
+class SchemaUnavailableError(Exception):
+    """Raised when the target schema has no tables — e.g. an uploaded session was torn down."""

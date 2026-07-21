@@ -1,4 +1,4 @@
-﻿import type { AskResponse } from '../types/api'
+﻿import type { AskRequest, AskResponse } from '../types/api'
 import { getMockResponse, getMockConfirmResponse } from '../test/mockData'
 
 const BASE_URL = '/api/ask'
@@ -16,7 +16,7 @@ export async function askQuestion(
     return getMockResponse(question, conversation_id, clarification_answer)
   }
 
-  const body: Record<string, string> = { question }
+  const body: AskRequest = { question }
 
   if (conversation_id !== undefined) {
     body.conversation_id = conversation_id
